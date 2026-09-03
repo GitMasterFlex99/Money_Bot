@@ -16,32 +16,61 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 CONTENT_DIR = Path(os.getenv("CONTENT_DIR", "content"))
 MAX_ATTEMPTS = 3
 
-THEMES = [
-    "NEET / unemployment absurdity",
-    "Chud / Gigachad internet behavior",
-    "Doomer / bleak internet behavior",
-    "gaming / terminally-online gamer behavior",
-    "being broke / financial desperation played for comedy",
-    "wizardposting / wizardmaxxing",
-    "absurd everyday situation",
-    "terminally-online social behavior",
-    "crypto / memecoin culture as a joke",
-    "normie versus bizarre internet creature",
-    "ridiculous overreaction to a tiny problem",
-    "cursed maxxing / mode-posting concept",
-]
-
-# Only these recurring visual archetypes may be used as characters.
-CHARACTER_ARCHETYPES = [
-    "Chudjak / Chud Wojak",
-    "Doomer Wojak",
-    "NPC Wojak",
-    "Soyjak / Soy Wojak",
-    "Bloomer Wojak",
-    "classic generic Wojak",
-    "stereotypical wizard character",
-    "Wojak-style normie",
-]
+# Video concepts are deliberately split into independent visual worlds.
+VIDEO_STYLES = {
+    "WOJAK_SHITPOST": {
+        "themes": [
+            "NEET / unemployment absurdity",
+            "Chud internet behavior",
+            "Doomer / bleak internet behavior",
+            "gaming / terminally-online behavior",
+            "being broke / financial desperation played for comedy",
+            "absurd everyday situation",
+            "terminally-online social behavior",
+            "crypto / memecoin culture as a joke",
+            "normie versus bizarre internet creature",
+            "ridiculous overreaction to a tiny problem",
+            "cursed maxxing / mode-posting concept",
+        ],
+        "characters": [
+            "Chudjak",
+            "Doomer Wojak",
+            "NPC Wojak",
+            "Soyjak",
+            "Bloomer Wojak",
+            "classic Wojak",
+            "Wojak-style normie",
+        ],
+        "style_rules": [
+            "Use recognizable Wojak meme artwork and proportions.",
+            "Chudjak must be the distinctive long-haired, glasses-wearing, heavy-set Chudjak form, not a generic beanie Wojak.",
+            "NPC must be the simple grey, bald, expressionless NPC form with minimal facial features.",
+            "Do not substitute one Wojak archetype for another.",
+            "Keep the visual style simple, blunt, meme-like, and immediately readable.",
+        ],
+    },
+    "DREAMCORE": {
+        "themes": [
+            "wizardposting / wizardmaxxing",
+            "surreal dream logic",
+            "uncanny empty-space encounter",
+            "bizarre mystical ritual",
+            "liminal everyday object behaving impossibly",
+            "dreamlike transformation",
+            "strange nighttime vision",
+        ],
+        "characters": [
+            "stereotypical wizard",
+        ],
+        "style_rules": [
+            "Dreamcore is a completely separate visual style from Wojak meme videos.",
+            "The wizard is NOT a Wojak, Soyjak, Chudjak, or other Wojak variant.",
+            "Use surreal, uncanny, atmospheric, dreamlike environments and imagery.",
+            "The wizard may have a robe, pointed hat, staff, and exaggerated beard, but must remain a standalone dreamcore character.",
+            "Do not import Wojak faces, meme proportions, or Wojak character labels into dreamcore concepts.",
+        ],
+    },
+}
 
 
 def ollama(prompt: str) -> str:
@@ -80,7 +109,7 @@ def extract_section(text: str, name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
+def quality_check(output: str, source_script: str, selected_style: str, selected_character: str) -> tuple[bool, list[str]]:
     reasons: list[str] = []
     upper = output.upper()
 
@@ -127,23 +156,34 @@ def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
     if source_terms & source_markers & set(re.findall(r"\b[a-zA-Z][a-zA-Z0-9_-]{3,}\b", concept)):
         reasons.append("reused old source premise markers")
 
+    character_block = extract_section(output, "CHARACTER BIBLE").lower()
     forbidden_character_phrases = [
         "name:", "age:", "personality:", "protagonist is", "main character is",
         "toasty", "gamer character", "unemployed bedroom dweller", "overconfident crypto bro",
         "terminally-online gamer",
     ]
-    character_block = extract_section(output, "CHARACTER BIBLE").lower()
     if any(phrase in character_block for phrase in forbidden_character_phrases):
-        reasons.append("invented custom character instead of Wojak archetype")
+        reasons.append("invented custom character instead of the selected archetype")
 
-    allowed_character_terms = ["wojak", "chudjak", "chud wojak", "doomer wojak", "npc wojak", "soyjak", "bloomer wojak", "wizard"]
-    if character_block and not any(term in character_block for term in allowed_character_terms):
-        reasons.append("character bible does not use an allowed archetype")
+    if selected_style == "WOJAK_SHITPOST":
+        allowed_terms = ["chudjak", "chud wojak", "doomer wojak", "npc wojak", "soyjak", "soy wojak", "bloomer wojak", "classic wojak", "wojak-style normie"]
+        if not any(term in character_block for term in allowed_terms):
+            reasons.append("Wojak video does not use an allowed Wojak archetype")
+        if "wizard" in character_block and "wojak" not in character_block:
+            reasons.append("wizard incorrectly used as a Wojak character")
+    else:
+        if "wizard" not in character_block:
+            reasons.append("dreamcore video does not use the standalone wizard character")
+        if any(term in character_block for term in ["chudjak", "doomer wojak", "npc wojak", "soyjak", "bloomer wojak", "classic wojak"]):
+            reasons.append("Wojak character incorrectly used in dreamcore")
+
+    if selected_character.lower() not in character_block and selected_style == "WOJAK_SHITPOST":
+        reasons.append("selected character archetype was not followed")
 
     return not reasons, reasons
 
 
-def build_prompt(folder: Path, rejection_feedback: str = "") -> str:
+def build_prompt(folder: Path, rejection_feedback: str = "") -> tuple[str, str, str]:
     def read(name: str) -> str:
         candidates = [folder / name, folder / f"{folder.name}_{name}"]
         for path in candidates:
@@ -155,8 +195,10 @@ def build_prompt(folder: Path, rejection_feedback: str = "") -> str:
                 return path.read_text(encoding="utf-8").strip()
         return ""
 
-    selected_theme = random.choice(THEMES)
-    selected_character = random.choice(CHARACTER_ARCHETYPES)
+    selected_style = random.choice(list(VIDEO_STYLES))
+    style = VIDEO_STYLES[selected_style]
+    selected_theme = random.choice(style["themes"])
+    selected_character = random.choice(style["characters"])
     source_hook = read("hook.txt")
     source_premise = read("premise.txt")
     source_script = read("script.txt")
@@ -171,33 +213,39 @@ Problems detected: {rejection_feedback}
 You MUST make a substantially different concept that fixes every listed problem. Do not merely rewrite the rejected attempt.
 """
 
-    return f"""You are the FINAL MEME DIRECTOR for a short-form shitpost account.
+    style_rules = "\n".join(f"- {rule}" for rule in style["style_rules"])
 
-You are NOT a script adapter. You are an ORIGINAL MEME IDEA GENERATOR that happens to receive an old content draft as background reference.
+    prompt = f"""You are the FINAL DIRECTOR for a short-form meme account.
 
-The old draft is deliberately isolated below. You MUST NOT rewrite it, continue it, summarize it, or preserve its story. Use it only to understand broad comedy territory if useful.
+You are an ORIGINAL MEME IDEA GENERATOR, not a script adapter. The old draft below is background reference only.
 
-RANDOM CREATIVE MODE
-The program randomly selected this flavor for THIS video:
+VIDEO STYLE — LOCKED
+{selected_style}
+
+RANDOM CREATIVE THEME — LOCKED
 {selected_theme}
 
-RANDOM CHARACTER
-The program selected this character archetype for THIS video:
+SELECTED CHARACTER — LOCKED
 {selected_character}
 
-CHARACTER LOCK — ABSOLUTE
-ALL HUMAN-LIKE CHARACTERS MUST BE WOJAK-STYLE INTERNET MEME CHARACTERS.
+STYLE RULES — ABSOLUTE
+{style_rules}
 
-You MUST use the selected Wojak archetype above as the protagonist unless a second character is genuinely needed. A second character must also be one of the allowed Wojak archetypes or the stereotypical wizard.
+CHARACTER SYSTEM SEPARATION — ABSOLUTE
+There are TWO completely separate visual worlds in this project.
 
-DO NOT INVENT A NAMED ORIGINAL CHARACTER.
-DO NOT GIVE THE CHARACTER A NAME, AGE, backstory, occupation-based custom identity, or personality profile.
-DO NOT CREATE GENERIC ANIME PEOPLE, REALISTIC PEOPLE, CUSTOM CARTOON PEOPLE, OR NEW ORIGINAL HUMAN CHARACTERS.
+WORLD A — WOJAK SHITPOST
+Characters are established Wojak meme archetypes only: Chudjak, Doomer Wojak, NPC Wojak, Soyjak, Bloomer Wojak, classic Wojak, or Wojak-style normie.
 
-The CHARACTER BIBLE should simply identify the archetype and a few visual traits, for example: "Chudjak / Chud Wojak, exaggerated muscular meme proportions, smug expression, simple meme-style clothing."
+WORLD B — DREAMCORE
+The stereotypical wizard belongs ONLY to dreamcore. The wizard is a standalone dreamcore character and is NOT a Soyjak, Chudjak, Wojak, or variant of one.
 
-WIZARD EXCEPTION
-A stereotypical wizard may be used when the random theme is wizardposting/wizardmaxxing or when a wizard is genuinely necessary for the joke. The wizard should be a simple stereotypical meme wizard: robe, pointed hat, staff, exaggerated beard. Do not invent a named fantasy character.
+NEVER MIX THE WORLDS.
+If VIDEO STYLE is WOJAK_SHITPOST, do not use a wizard.
+If VIDEO STYLE is DREAMCORE, do not use Chudjak, Doomer, NPC, Soyjak, Bloomer, classic Wojak, or Wojak-style normie.
+Do not describe the wizard as a Wojak.
+Do not describe Chudjak as a generic beanie Wojak.
+Do not describe NPC as a generic human or normal person.
 
 SOURCE DRAFT — BACKGROUND REFERENCE ONLY
 SOURCE HOOK:
@@ -213,140 +261,68 @@ SOURCE VISUALS:
 {source_visuals}
 
 SOURCE ISOLATION RULE
-Treat everything above as a discarded old draft sitting in a reference folder. Your new video should work even if the source text is deleted completely.
+Treat everything above as a discarded old draft. The new video must work if the source text is deleted completely.
 
-DO NOT:
-- reuse the source's dialogue
-- continue the source's story
-- preserve its sequence of events
-- preserve its main object merely because it appears there
-- preserve its brand, website, device, location, or character unless independently useful
-- turn the old script into a shorter version
-- paraphrase the old script
-- make an eBay/ThinkPad/computer resale joke merely because the source mentions those things
-
-If the source and your new concept have the same central premise, THROW YOUR CONCEPT AWAY AND MAKE ANOTHER ONE.
+DO NOT reuse, continue, summarize, paraphrase, or shorten the source. Do not preserve its central premise, sequence of events, dialogue, brand, website, device, location, or distinctive object merely because it appears there.
+If the new concept resembles the source, throw it away and make another one.
 {feedback_block}
 
-CREATIVE PRIORITY
-1. RANDOMLY SELECTED THEME
-2. LOCKED WOJAK CHARACTER
-3. ORIGINAL VISUAL GAG
-4. IMMEDIATE PREMISE
-5. CONCRETE VISUAL PUNCHLINE
-6. MEME TIMING
-7. STYLIZED ANIMATION
-8. CONTINUITY
-9. SOURCE REFERENCE — LAST PRIORITY
+THIS IS A SHORT MEME, NOT A STORY
+Create a 6-12 second visual gag.
+SETUP -> ONE ESCALATION -> VISIBLE REVEAL/CONSEQUENCE -> CUT
 
-THIS IS A MEME, NOT A STORY
-Create a 6-12 second visual shitpost. It should feel like a bizarre internet image suddenly came to life.
-
-Use this structure:
-SETUP IMAGE -> ONE STUPID ESCALATION -> UNEXPECTED VISUAL REVEAL/CONSEQUENCE -> CUT
-
-Do not write a conventional narrative with exposition, dialogue, emotional arc, or multiple story beats.
+ONE CENTRAL GAG ONLY.
+Start immediately on the funny situation.
+Every shot contains visible action.
+Prefer zero dialogue.
+Maximum one short dialogue line if absolutely necessary.
 
 VISUAL PUNCHLINE — NON-NEGOTIABLE
-The final shot MUST physically show the joke's consequence, reveal, reversal, failure, or absurd result.
+The final shot MUST physically show the joke's consequence, reveal, reversal, failure, or absurd result. A facial reaction alone is invalid.
 
-GOOD:
-- character thinks an object is valuable; reveal shows it is worthless
-- character performs an absurdly serious ritual; the result is pathetic
-- character activates something confidently; something ridiculous immediately happens
-- character opens something expecting one thing; completely different thing is inside
-- tiny everyday inconvenience causes an absurdly disproportionate physical response
-- character finally achieves the goal; the result is obviously useless
-- a mundane object unexpectedly behaves like something completely different
+Prefer physical reveals: objects break, transform, fail, produce the wrong result, reveal something ridiculous, or cause an absurd consequence.
+Do not rely on generated computer-screen text as the primary punchline.
 
-BAD:
-- character looks sad
-- character looks angry
-- character looks embarrassed
-- character stares at camera
-- character sighs
-- generic zoom on face
-- narrator explains the joke
-- caption tells the audience what they should find funny
-- fake computer error/message as the primary punchline
+CAPTION RULE
+Caption text is optional and should usually be 0-6 words. Never explain the joke.
 
-HARD RULE: If the final shot could be replaced with "character reacts" and the joke still works, the concept is INVALID. Regenerate it.
-
-PREFER PHYSICAL REVEALS
-Whenever possible, make the punchline something physically visible: an object breaks, pops, transforms, fails, reveals something ridiculous, produces the wrong result, or causes an absurd consequence. Do not rely on computer-screen text.
-
-DIALOGUE MINIMIZATION
-Prefer ZERO dialogue. The visual should carry the joke. If dialogue is necessary, use ONE short line total. Never write a speech, conversation, narration, or multiple explanatory lines.
-
-CAPTION MINIMIZATION
-CAPTION TEXT should usually be 0-6 words. It is an optional meme label, not an explanation of the joke. Good examples: "locked in", "bro is cooked", "MAXXING", "it's over", "we are so back". Do not write a sentence explaining the premise.
-
-STYLE
-Broad internet shitpost energy: NEET, Chud, Doomer, wizardposting, gaming, broke-life, terminally-online behavior, cursed maxxing, occasional crypto/memecoin jokes.
-
-VISUAL LANGUAGE
-- Wojak-style characters only
-- simple meme animation
-- stylized 2D, 2.5D, simple 3D, or low-poly
-- exaggerated faces and silhouettes
-- cheap/simple environments
-- awkward or stiff movement
-- sudden physical escalation
-- blunt framing
-- fast hard cuts
+STYLE RULES
+- 6-12 seconds total
+- 1-4 shots maximum
 - 9:16 vertical
-- no photorealism
+- fast hard cuts
+- simple, readable visuals
+- stylized rather than photorealistic
 - no Hollywood cinematography
 - no commercial polish
+- no anime humans
+- no realistic humans
+- no custom original human characters
+- no named original characters
 
-SLANG
-Use slang only when it makes the joke better: maxxing, locked in, bro, cooked, mode, it's over, we are so back, wizardmaxxing, etc. Do not force slang into every line.
+WOJAK SHITPOST DIRECTION
+If this is WOJAK_SHITPOST, make the chosen archetype visually recognizable and consistent across every shot. The comedy should feel like a bizarre internet meme suddenly came to life. Use NEET, unemployment, gaming, broke-life, terminally-online behavior, Chud/Doomer/Soy/NPC/Bloomer culture, and occasional crypto/memecoin jokes.
+
+DREAMCORE DIRECTION
+If this is DREAMCORE, make it atmospheric, surreal, uncanny, liminal, and dreamlike. The wizard is a standalone fantasy/dreamcore figure, not a Wojak. Use strange environments, impossible physical events, unsettling calmness, bizarre rituals, dream logic, and abrupt surreal reveals. Do not turn it into a conventional fantasy adventure or a Wojak shitpost.
 
 WIZARDPOSTING
-Wizardposting is only one possible theme. Do not insert magic unless the randomly selected theme calls for it or the idea genuinely benefits from it.
+Wizardposting is only a dreamcore theme in this system. Never force a wizard into a Wojak shitpost.
 
-CORE RULES
-1. ONE central gag.
-2. 6-12 seconds total.
-3. 1-4 shots maximum.
-4. Start immediately on the funny situation.
-5. Every shot contains visible action.
-6. Zero dialogue is preferred.
-7. If dialogue is used, maximum ONE short line total.
-8. Final shot contains the actual reveal/consequence, NOT merely a reaction.
-9. Never explain the joke.
-10. Only Wojak-style characters and the stereotypical wizard are permitted.
-11. Never invent named characters.
-12. Keep props and characters consistent.
-13. If a desktop PC appears, it remains the same desktop PC.
-14. Never randomly switch devices, clothing, rooms, or object positions.
-15. Captions are added during editing.
-16. Crypto is comedy only, never financial advice or token promotion.
+SLANG
+Use internet slang only when it naturally improves the joke. Do not force it into every concept.
 
-CHARACTER ARCHETYPES
-The ONLY permitted character types are:
-- Chudjak / Chud Wojak
-- Doomer Wojak
-- NPC Wojak
-- Soyjak / Soy Wojak
-- Bloomer Wojak
-- classic generic Wojak
-- Wojak-style normie
-- stereotypical wizard
-
-Do not use any other human character type. Do not name characters.
-
-CONTINUITY LOCK
-Silently establish exact archetype, visual traits, clothing, location, lighting, important props, device, object positions, and animation style. Keep them consistent across every shot.
+CONTINUITY
+Keep character appearance, clothing, environment, lighting, props, devices, and object positions consistent. Never randomly switch devices, rooms, clothing, or character types.
 
 OUTPUT FORMAT — FOLLOW EXACTLY
 Return ONLY these sections:
 
 CONCEPT:
-One sentence describing the NEW gag. It must not describe the source draft.
+One sentence describing the NEW gag.
 
 CHARACTER BIBLE:
-Name ONLY the permitted archetype. Do not invent a name, age, backstory, or custom personality.
+Identify ONLY the locked character archetype and concise visual traits. Do not invent names, ages, backstories, occupations, or personalities.
 
 CONTINUITY LOCK:
 Very concise.
@@ -367,7 +343,7 @@ SOUND: ...
 Add SHOT 3 and SHOT 4 only when necessary.
 
 MASTER VIDEO PROMPT:
-One compact prompt matching the SHOTS exactly. State stylized, non-photorealistic 9:16 Wojak meme animation. Do not invent additional shots or actions.
+One compact prompt matching the SHOTS exactly. Do not invent additional shots or actions.
 
 NEGATIVE PROMPT:
 photorealism, realistic humans, Hollywood realism, commercial polish, long cinematic pacing, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, teleporting objects, unreadable AI-generated text, malformed hands, extra limbs, watermarks, logos, random cinematic effects, unnecessary camera movement, anime characters, realistic people, custom original human characters
@@ -382,25 +358,28 @@ EDITING NOTES:
 Hard cuts, exact pacing, caption timing, sound effects, and punchline timing.
 
 FINAL VALIDATION
-Silently reject and regenerate before answering if ANY apply:
-- Any human character is not a permitted Wojak archetype or stereotypical wizard.
-- A character has a custom name, age, backstory, or invented identity.
-- The new idea is recognizably the old script with details changed.
-- The source's central premise is still driving the joke.
-- The source's dialogue was reused or paraphrased.
+Silently reject and regenerate if ANY apply:
+- Wojak and dreamcore worlds are mixed.
+- A wizard appears in a WOJAK_SHITPOST video.
+- A Wojak archetype appears in a DREAMCORE video.
+- The wizard is described as a Wojak or Soyjak.
+- Chudjak is described as a generic beanie Wojak instead of the distinctive Chudjak form.
+- NPC is described as a normal human instead of the simple grey NPC form.
+- The selected character is changed.
+- Any human character is an unapproved custom character.
+- The new idea is recognizably the old source script.
 - The result is longer than 12 seconds.
 - More than 4 shots are needed.
 - There is more than one central joke.
-- Any shot contains a long speech or explanatory narration.
 - The final shot is only a facial reaction.
-- The final beat does not contain a concrete physical reveal, reversal, failure, or absurd consequence.
 - The punchline depends on generated screen text.
-- The caption explains the joke instead of enhancing it.
-- It resembles an advertisement, short film, tutorial, explainer, or conventional skit.
+- The caption explains the joke.
+- It resembles an advertisement, tutorial, explainer, or conventional short film.
 - It is photorealistic.
 
 Do NOT include affiliate links, monetization instructions, financial advice, or automatic posting instructions.
 """
+    return prompt, selected_style, selected_character
 
 
 def generate_for(folder: Path) -> None:
@@ -412,23 +391,24 @@ def generate_for(folder: Path) -> None:
 
     last_reasons = ""
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        output = ollama(build_prompt(folder, last_reasons))
-        valid, reasons = quality_check(output, source_script)
+        prompt, selected_style, selected_character = build_prompt(folder, last_reasons)
+        output = ollama(prompt)
+        valid, reasons = quality_check(output, source_script, selected_style, selected_character)
         if valid:
             output_path = folder / f"{folder.name}_video_prompt.txt"
             output_path.write_text(output, encoding="utf-8")
-            print(f"Created AI video package: {output_path}")
+            print(f"Created {selected_style} video package: {output_path}")
             if attempt > 1:
                 print(f"Accepted after {attempt} generation attempts.")
             return
         last_reasons = "; ".join(reasons)
-        print(f"Rejected video prompt attempt {attempt}: {last_reasons}")
+        print(f"Rejected {selected_style} video prompt attempt {attempt}: {last_reasons}")
 
     raise RuntimeError(f"Could not produce a valid meme video prompt after {MAX_ATTEMPTS} attempts. Last problems: {last_reasons}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create AI-video-ready scripts and prompt packages")
+    parser = argparse.ArgumentParser(description="Create separated Wojak-shitpost or dreamcore video prompt packages")
     parser.add_argument("--limit", type=int, default=3, help="number of latest drafts to process")
     parser.add_argument("--folder", type=Path, help="process one specific draft folder")
     args = parser.parse_args()
