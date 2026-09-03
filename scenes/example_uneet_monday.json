@@ -10,7 +10,7 @@
       "character_scale": 0.62,
       "character_position": "bottom_right",
       "motion": "push_in",
-      "character_motion": "float"
+      "character_motion": "grounded"
     },
     {
       "duration": 2.2,
@@ -19,7 +19,7 @@
       "character_scale": 0.68,
       "character_position": "bottom_left",
       "motion": "pan_right",
-      "character_motion": "sway"
+      "character_motion": "slide_right"
     },
     {
       "duration": 1.8,
