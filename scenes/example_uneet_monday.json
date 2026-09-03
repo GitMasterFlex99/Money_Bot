@@ -1,11 +1,11 @@
 {
   "title": "Unemployed Monday",
   "style": "WOJAK_SHITPOST",
-  "description": "First real renderer test using the Bedroom.jpg and gaming.jpg backgrounds with Chudjak as a transparent character overlay.",
+  "description": "First real renderer test using the local Bedroom.png background with Chudjak as a transparent character overlay.",
   "shots": [
     {
       "duration": 2.5,
-      "background": "Bedroom.jpg",
+      "background": "Bedroom.png",
       "character": "chudjak.png",
       "character_scale": 0.62,
       "character_position": "bottom_center",
@@ -13,7 +13,7 @@
     },
     {
       "duration": 2.8,
-      "background": "gaming.jpg",
+      "background": "Bedroom.png",
       "character": "chudjak.png",
       "character_scale": 0.62,
       "character_position": "bottom_center",
@@ -21,7 +21,7 @@
     },
     {
       "duration": 2.5,
-      "background": "Bedroom.jpg",
+      "background": "Bedroom.png",
       "character": "chudjak.png",
       "character_scale": 0.62,
       "character_position": "bottom_center",
