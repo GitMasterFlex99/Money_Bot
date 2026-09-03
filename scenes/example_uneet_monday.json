@@ -1,21 +1,30 @@
 {
   "title": "Unemployed Monday",
   "style": "WOJAK_SHITPOST",
-  "description": "First renderer test using the user's Bedroom.jpg and gaming.jpg backgrounds. Add a compatible character image when available.",
+  "description": "First real renderer test using the Bedroom.jpg and gaming.jpg backgrounds with Chudjak as a transparent character overlay.",
   "shots": [
     {
       "duration": 2.5,
       "background": "Bedroom.jpg",
+      "character": "chudjak.png",
+      "character_scale": 0.62,
+      "character_position": "bottom_center",
       "caption": "me opening the job board"
     },
     {
       "duration": 2.8,
       "background": "gaming.jpg",
+      "character": "chudjak.png",
+      "character_scale": 0.62,
+      "character_position": "bottom_center",
       "caption": "one application later"
     },
     {
       "duration": 2.5,
       "background": "Bedroom.jpg",
+      "character": "chudjak.png",
+      "character_scale": 0.62,
+      "character_position": "bottom_center",
       "caption": "career development"
     }
   ]
