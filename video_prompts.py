@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 from pathlib import Path
 
 import requests
@@ -40,9 +38,11 @@ def build_prompt(folder: Path) -> str:
         path = folder / name
         return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
-    return f"""Turn this short-form comedy draft into a production-ready prompt package for an AI video generator such as Sora, Veo, Kling, Runway, or similar.
+    return f"""You are a short-form shitpost comedy director creating a video-generation-ready script from the draft below.
 
-The goal is NOT to rewrite the joke. Preserve the exact comedic premise and spoken script while designing visuals that make the joke work as a short vertical video.
+IMPORTANT: Write for an AI VIDEO GENERATOR, not for a human screenwriter. The comedy must be expressed through visible actions, physical reactions, environments, camera shots, and timing. Do not merely describe what the character says.
+
+The finished concept should work as a 20-45 second vertical 9:16 video. Preserve the core joke, but you MAY rewrite the spoken dialogue when necessary to make it fit the visual sequence. Keep the joke simple, coherent, and easy to generate.
 
 DRAFT
 HOOK:
@@ -51,40 +51,85 @@ HOOK:
 PREMISE:
 {read('premise.txt')}
 
-SCRIPT:
+ORIGINAL SCRIPT:
 {read('script.txt')}
 
 EXISTING VISUAL NOTES:
 {read('visuals.txt')}
 
-Create a coherent 20-45 second video. Use 9:16 vertical framing. Prefer 4-8 short shots rather than one complicated continuous scene. Keep the same character, room, clothing, props, lighting, and visual style consistent between shots.
+CHARACTER SYSTEM
+Use recognizable internet shitpost character archetypes when they genuinely improve the joke. Possible recurring characters include:
+- Chud-style Wojak: exaggerated confident/rough internet-guy appearance
+- Doomer-style Wojak: tired, defeated, bleak expression
+- NPC-style Wojak: blank, repetitive, emotionally vacant behavior
+- Soyjak-style character: exaggerated shocked/excited reaction
+- Bloomer-style character: optimistic, functional contrast to the main character
+- generic normie: ordinary person who reacts to the absurd internet character
+- terminally-online gamer
+- unemployed bedroom dweller
+- overconfident crypto/memecoin bro
 
-STYLE
-- grounded internet-native comedy
-- believable live-action look unless the premise clearly benefits from animation
-- slightly exaggerated facial reactions and physical comedy
-- ordinary bedroom, apartment, gaming setup, workplace, street, or other setting appropriate to the script
-- no logos, brands, watermarks, fake social-media UI, or copyrighted characters
-- no cinematic action-movie excess unless the joke specifically calls for it
-- visuals should escalate with the spoken joke and land on the final punchline
-- leave clean space for captions/subtitles
+These are character ARCHETYPES, not exact copies of a particular artist's image. Use an original visual interpretation suitable for the scene. Do not use copyrighted franchise characters.
 
-Return ONLY these sections:
+Choose 1-3 characters maximum. Do not add characters just for decoration. Every character must have a comedic purpose.
+
+VISUAL-FIRST WRITING RULES
+1. Establish the main character, location, clothing, important props, and time of day in the first shot.
+2. Create a CONTINUITY STATE and maintain it throughout the entire video.
+3. If a character starts using a desktop PC, every later computer interaction must use that same desktop PC unless the script explicitly shows a transition to another device.
+4. Never spontaneously introduce a laptop, phone, tablet, different room, different clothing, new furniture, or replacement prop.
+5. Do not teleport characters or objects between shots.
+6. Keep faces, body type, clothing, hairstyle, room layout, lighting, props, and screen position consistent.
+7. Every shot must have a visible action. Avoid static shots where nothing happens.
+8. Write physical comedy and facial reactions into the action rather than relying on narration.
+9. Use visual escalation: normal situation -> specific absurd detail -> escalation -> strongest visual punchline.
+10. The final shot must visually reinforce the joke's final line or realization.
+11. Prefer mundane settings exaggerated into absurd situations: bedroom, gaming desk, job-search screen, kitchen, supermarket, bus stop, workplace, etc.
+12. Crypto/memecoin references should be part of the joke's world, not advertisements or financial advice.
+13. Do not write generic influencer/TikTok language, listicles, motivational content, product promotion, or crypto recommendations.
+14. Do not copy existing memes, jokes, distinctive catchphrases, or recognizable copyrighted characters.
+
+CONTINUITY STATE
+Before writing the shots, silently establish:
+- character appearance
+- clothing
+- location
+- time of day
+- lighting
+- important props
+- exact computer/device being used
+- position of important objects
+- visual style
+Then keep these unchanged unless the script explicitly requires a change.
+
+VIDEO SCRIPT FORMAT
+Write the result as a sequence of 4-8 shots. Each shot must contain:
+SHOT X — duration
+VISUAL: exactly what is visible and what the characters physically do.
+CAMERA: framing and movement.
+DIALOGUE/VO: spoken words, if any.
+SOUND: important sound effects or environmental audio.
+
+The dialogue should be short and natural. Let the visuals carry as much of the joke as possible.
+
+After the shots, include:
+
+CHARACTER BIBLE:
+A concise description of each character's appearance, personality, clothing, and recurring visual traits so an AI video generator can keep them consistent.
+
+CONTINUITY LOCK:
+A concise list of the location, props, device, clothing, lighting, and other details that MUST remain consistent across shots.
 
 MASTER VIDEO PROMPT:
-One detailed prompt that can be pasted into an AI video generator to create the whole video. Include subject, environment, camera, movement, lighting, continuity, pacing, performance, vertical 9:16 framing, and the comedic tone.
-
-SHOT LIST:
-Number 4-8 shots. For each shot give approximate duration, what is visible, camera framing/movement, character action/expression, and which script line it supports.
+One polished prompt suitable for pasting into an AI video generator. It must describe the complete visual concept, characters, setting, action progression, camera language, comedic tone, 9:16 framing, continuity, and final punchline.
 
 NEGATIVE PROMPT:
-A concise list of things to avoid: text artifacts, extra fingers/limbs, inconsistent faces, changing clothes, changing room layout, unwanted logos, watermarks, random objects, visual glitches, exaggerated cinematic effects, and anything that would undermine the joke.
+Include continuity errors, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, text artifacts, malformed hands, extra limbs, watermarks, logos, random cinematic effects, and anything that weakens the joke.
 
 EDITING NOTES:
-Give concise instructions for pacing, hard cuts, captions, sound effects, pauses, and where the final punchline should land.
+Give concise instructions for cuts, pacing, caption placement, pauses, sound effects, and punchline timing.
 
-VOICEOVER:
-Return the spoken script exactly as supplied, with no rewriting.
+Do NOT include affiliate links, monetization instructions, financial advice, or automatic posting instructions.
 """
 
 
@@ -95,7 +140,7 @@ def generate_for(folder: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create AI-video-ready prompt packages from Money Bot drafts")
+    parser = argparse.ArgumentParser(description="Create AI-video-ready scripts and prompt packages")
     parser.add_argument("--limit", type=int, default=3, help="number of latest drafts to process")
     parser.add_argument("--folder", type=Path, help="process one specific draft folder")
     args = parser.parse_args()
