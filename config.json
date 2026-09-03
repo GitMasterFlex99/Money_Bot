@@ -1,15 +1,8 @@
 {
-  "niche": "useful PC accessories and budget tech",
-  "audience": "people who want practical tech upgrades without overspending",
+  "niche": "NEET, unemployed, broke, crypto, and terminal internet culture shitposts",
+  "audience": "NEETs, unemployed people, broke young adults, crypto traders, and internet-native meme communities",
   "platform": "short-form video",
-  "tone": "funny, useful, honest",
-  "affiliate_products": [
-    {
-      "name": "Example Product",
-      "url": "PASTE_YOUR_AFFILIATE_URL_HERE",
-      "facts": ["Replace this with verified product facts"]
-    }
-  ],
-  "content_goal": "educate or entertain first, then give a clear reason to check the product",
+  "tone": "absurd, dry, chaotic, deadpan, post-ironic, and shitposty",
+  "content_goal": "build a funny original NEET and crypto shitpost account; entertain first and never directly promote affiliate products or tokens",
   "max_posts_per_run": 3
 }
