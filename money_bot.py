@@ -85,10 +85,7 @@ def quality_scan(text: str) -> list[str]:
 
 
 def load_trend_analysis() -> str:
-    candidates = [
-        Path("trend_signals.json"),
-        CONTENT_DIR / "trend_signals.json",
-    ]
+    candidates = [Path("trend_signals.json"), CONTENT_DIR / "trend_signals.json"]
     for path in candidates:
         if path.exists():
             try:
@@ -300,9 +297,8 @@ def launch_gui() -> None:
         from textual.app import App, ComposeResult
         from textual.containers import Container, VerticalScroll
         from textual.widgets import Button, Footer, Header, RichLog, Static
-        from textual.worker import work
-    except ImportError:
-        print("Textual is not installed. Run: pip install textual")
+    except ImportError as exc:
+        print(f"GUI dependency import failed: {exc}")
         return
 
     class MoneyBotApp(App):
@@ -356,7 +352,6 @@ def launch_gui() -> None:
             elif action == "exit":
                 self.exit()
 
-        @work(thread=True)
         def run_generate(self) -> None:
             self.log("[bold]Generating drafts...[/bold]")
             result = subprocess.run([sys.executable, __file__, "generate"], cwd=Path(__file__).resolve().parent, capture_output=True, text=True)
@@ -381,7 +376,6 @@ def launch_gui() -> None:
                 self.log(f"\n[bold]{path.parent.name}/{path.name}[/bold]")
                 self.log(path.read_text(encoding="utf-8")[:4000])
 
-        @work(thread=True)
         def run_trends(self) -> None:
             root = Path(__file__).resolve().parent
             trends_file = root / "trends.py"
@@ -396,54 +390,43 @@ def launch_gui() -> None:
                 self.log(f"[red]{result.stderr.strip()}[/red]")
 
         def show_trends(self) -> None:
-            root = Path(__file__).resolve().parent
-            path = root / "trend_signals.json"
-            if not path.exists():
-                self.log("No trend_signals.json found.")
-                return
-            self.log(path.read_text(encoding="utf-8")[:12000])
+            analysis = load_trend_analysis()
+            self.log("[bold]Trend Intelligence[/bold]\n" + (analysis or "No trend intelligence available."))
 
         def run_safety(self) -> None:
+            self.log("[bold]Running safety check...[/bold]")
             root = Path(__file__).resolve().parent
-            content_dir = root / CONTENT_DIR
-            files = sorted(content_dir.rglob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True) if content_dir.exists() else []
+            files = sorted(root.joinpath(CONTENT_DIR).rglob("script.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
             if not files:
-                self.log("No drafts found.")
+                self.log("No scripts found.")
                 return
-            checked = flagged = 0
-            for path in files[:30]:
-                body = path.read_text(encoding="utf-8")
-                flags = safety_scan(body) + quality_scan(body)
-                checked += 1
-                if flags:
-                    flagged += 1
-                    self.log(f"[red]{path.parent.name}/{path.name}: {', '.join(flags)}[/red]")
-                else:
-                    self.log(f"[green]{path.parent.name}/{path.name}: PASS[/green]")
-            self.log(f"Safety/quality check complete: {checked} checked, {flagged} flagged.")
+            for path in files[:20]:
+                text = path.read_text(encoding="utf-8")
+                flags = safety_scan(text) + quality_scan(text)
+                self.log(f"{path.parent.name}: " + ("FLAGS: " + ", ".join(flags) if flags else "PASS"))
 
         def open_content(self) -> None:
             root = Path(__file__).resolve().parent
-            folder = root / CONTENT_DIR
-            folder.mkdir(parents=True, exist_ok=True)
-            if sys.platform.startswith("win"):
-                os.startfile(str(folder))
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(folder)])
-            else:
-                subprocess.Popen(["xdg-open", str(folder)])
-            self.log(f"Opened: {folder}")
+            content_dir = root / CONTENT_DIR
+            content_dir.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(content_dir))
+            self.log(f"Opened: {content_dir}")
 
     MoneyBotApp().run()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Money Bot content assistant")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Money Bot")
     parser.add_argument("command", choices=["init", "generate", "gui"])
     args = parser.parse_args()
+
     if args.command == "init":
         init()
     elif args.command == "generate":
         generate()
-    else:
+    elif args.command == "gui":
         launch_gui()
+
+
+if __name__ == "__main__":
+    main()
