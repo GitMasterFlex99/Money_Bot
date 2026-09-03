@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 from pathlib import Path
 
 import requests
@@ -12,6 +13,21 @@ load_dotenv()
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 CONTENT_DIR = Path(os.getenv("CONTENT_DIR", "content"))
+
+THEMES = [
+    "NEET / unemployment absurdity",
+    "Chud / Gigachad internet behavior",
+    "Doomer / bleak internet behavior",
+    "gaming / terminally-online gamer behavior",
+    "being broke / financial desperation played for comedy",
+    "wizardposting / wizardmaxxing",
+    "absurd everyday situation",
+    "terminally-online social behavior",
+    "crypto / memecoin culture as a joke",
+    "normie versus bizarre internet creature",
+    "ridiculous overreaction to a tiny problem",
+    "cursed maxxing / mode-posting concept",
+]
 
 
 def ollama(prompt: str) -> str:
@@ -38,10 +54,20 @@ def build_prompt(folder: Path) -> str:
         path = folder / name
         return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
+    selected_theme = random.choice(THEMES)
+
     return f"""You create ultra-short animated internet shitpost videos.
 
 THIS IS NOT A SHORT FILM. THIS IS NOT AN AD. THIS IS NOT A STORY.
-You are turning the draft into a 6-12 SECOND MEME VIDEO. If the idea cannot fit in 6-12 seconds, simplify it aggressively.
+You are creating a 6-12 SECOND MEME VIDEO. If the idea cannot fit in 6-12 seconds, simplify it aggressively.
+
+RANDOM CREATIVE MODE
+For this video, the randomly selected flavor is:
+{selected_theme}
+
+Treat this as the creative direction for THIS video only. Do not force this theme into every future video. Do not mention that a theme was randomly selected in the output.
+
+The original draft is only RAW MATERIAL. You are NOT required to preserve its exact premise, props, setting, dialogue, or sequence. Extract anything funny from it, then rebuild the idea around the selected flavor. If the original premise is boring, replace it with a stronger original gag.
 
 STYLE TARGET
 Capture the general energy of short NEET/Chud/wizardposting internet shitposts without copying any particular account, post, artwork, joke, punchline, or distinctive phrase.
@@ -49,19 +75,32 @@ Capture the general energy of short NEET/Chud/wizardposting internet shitposts w
 The result should feel like:
 - a bizarre image that suddenly moves
 - one stupid premise taken completely seriously
-- blunt internet slang
+- blunt internet slang when appropriate
 - deadpan delivery
 - awkward/stiff meme animation
 - one escalating visual gag
-- a hard cut or abrupt final realization
+- an abrupt final punchline
 
-Recurring themes can include NEET life, unemployment, being broke, gaming, terminal internet behavior, Chud/Doomer/Gigachad archetypes, wizardposting/wizardmaxxing, and occasional crypto/memecoin culture. Rotate themes. Do not make every video about crypto or the same character.
+THEME POOL
+Across different videos, naturally rotate among:
+- NEET life and unemployment
+- Chud / Gigachad / Doomer behavior
+- gaming and terminal internet behavior
+- being broke
+- wizardposting / wizardmaxxing
+- absurd everyday situations
+- cursed maxxing / mode-posting
+- normie versus internet creature
+- occasional crypto/memecoin culture
+- ridiculous overreactions
+
+The selected theme is a preference, NOT a requirement to include every associated cliché. Make the premise specific and original.
 
 WIZARDPOSTING
-Wizardposting is encouraged when it naturally fits the premise. Use original absurd fantasy imagery: robes, staffs, candles, improvised spell circles, glowing runes, cursed books, potions, summoning rituals, magical explosions, or ridiculously serious spellcasting over mundane problems. The humor should come from the mismatch between the mundane problem and the absurd magical response.
+Wizardposting is one possible flavor, not a mandatory element. When selected or when it genuinely makes another premise funnier, use original absurd fantasy imagery such as robes, staffs, candles, spell circles, glowing runes, cursed books, potions, summoning rituals, or ridiculous spellcasting over mundane problems. Do not force wizardposting into unrelated videos.
 
 SLANG
-Use internet-native slang naturally when it improves the joke: "maxxing", "mode", "locked in", "bro", "cooked", "it's over", "we are so back", "wizardposting", "wizardmaxxing", and similar language. Do not force slang into every line. Do not reproduce another creator's catchphrases.
+Use internet-native slang naturally when it improves the joke: "maxxing", "mode", "locked in", "bro", "cooked", "it's over", "we are so back", "wizardposting", "wizardmaxxing", and similar vocabulary. Do not force slang into every line. Do not reproduce another creator's catchphrases.
 
 VISUAL STYLE
 Use stylized meme animation, NOT photorealism:
@@ -76,7 +115,7 @@ Use stylized meme animation, NOT photorealism:
 - no realistic human skin
 - no polished commercial aesthetic
 
-DRAFT
+RAW DRAFT MATERIAL
 HOOK:
 {read('hook.txt')}
 
@@ -90,7 +129,7 @@ EXISTING VISUAL NOTES:
 {read('visuals.txt')}
 
 CORE RULES
-1. Find ONE central visual joke in the draft.
+1. Find or invent ONE central visual joke.
 2. Start on the joke immediately. No intro, setup montage, title card, exposition, or establishing sequence.
 3. Target 6-12 seconds total.
 4. Use 2-4 shots maximum. One continuous shot is encouraged if funnier.
@@ -98,11 +137,11 @@ CORE RULES
 6. Keep dialogue to zero or one very short line unless more is absolutely necessary.
 7. The visual action must carry the joke even with sound off.
 8. End immediately after the funniest visual beat. Do not explain the joke afterward.
-9. Make the final shot the strongest image or reaction.
+9. Make the final image or reaction the strongest beat.
 10. Prefer a mundane situation suddenly becoming absurd rather than a complicated plot.
 11. Use 1-2 characters by default, maximum 3.
 12. Every character must have a comedic purpose.
-13. Do not add random props, locations, devices, characters, or plot points that are not needed for the joke.
+13. Do not add random props, locations, devices, characters, or plot points that are not needed.
 14. If a character starts with a desktop PC, keep using that exact PC. Never randomly switch to a laptop or phone.
 15. Keep faces, clothing, body type, room layout, lighting, props, and object positions consistent.
 16. Never teleport characters or objects between shots.
@@ -113,23 +152,23 @@ CORE RULES
 
 CHARACTER ARCHETYPES
 Choose only what helps the joke:
-- original Chud-style Wojak archetype: rough, confident internet guy
-- original Doomer-style Wojak archetype: exhausted, bleak internet guy
-- original Gigachad-style archetype: absurd confidence
-- NPC-style archetype: blank and repetitive
-- Soyjak-style archetype: exaggerated reaction
-- Bloomer-style archetype: weirdly functional contrast
+- original Chud-style Wojak archetype
+- original Doomer-style Wojak archetype
+- original Gigachad-style archetype
+- NPC-style archetype
+- Soyjak-style reaction archetype
+- Bloomer-style archetype
 - unemployed bedroom dweller
 - terminally-online gamer
 - overconfident crypto bro
 - original wizard/wizardposter archetype
 - generic normie/wagie for contrast
 
-Do not reproduce any specific artist's exact character design. These are loose archetypes with original visual designs.
+These are loose archetypes with original visual designs. Do not reproduce any specific artist's exact character design.
 
 CONTINUITY STATE
 Before writing, silently lock:
-- character appearance
+- exact character appearance
 - clothing
 - location
 - time of day
@@ -169,7 +208,7 @@ SOUND: key sound effect/audio.
 Continue only if needed, up to SHOT 4.
 
 MASTER VIDEO PROMPT:
-Write one compact prompt for an AI video generator describing the exact characters, setting, visual style, physical action, shot progression, camera, comedic timing, 9:16 framing, continuity, and final punchline. Explicitly require stylized animation and non-photorealistic visuals.
+Write one compact prompt for an AI video generator describing the exact characters, setting, stylized animation, physical action, shot progression, camera, comedic timing, 9:16 framing, continuity, and final punchline. Explicitly require non-photorealistic visuals.
 
 NEGATIVE PROMPT:
 Include photorealism, realistic humans, Hollywood cinematic realism, commercial polish, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, teleporting objects, unreadable text, malformed hands, extra limbs, watermarks, logos, random cinematic effects, and anything that weakens the meme.
@@ -186,9 +225,10 @@ Hard cuts, pacing, caption timing, sound effects, pauses, zooms, and the exact p
 FINAL CHECK BEFORE ANSWERING
 - Is it actually 6-12 seconds?
 - Is there only ONE central gag?
-- Is it visually funny without explanation?
+- Is the gag visually understandable without explanation?
 - Is the final beat the strongest beat?
 - Is the animation stylized rather than photorealistic?
+- Is the selected flavor clearly reflected without becoming a cliché?
 - Did you avoid copying a specific meme/account?
 - Did you preserve continuity?
 - Did you avoid unnecessary dialogue and exposition?
