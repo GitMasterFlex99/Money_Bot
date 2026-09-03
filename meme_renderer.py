@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -68,85 +69,148 @@ def resolve_asset(value: str, category: str) -> Path:
     raise FileNotFoundError(f"Asset not found: {value} (looked in assets/{category}/)")
 
 
-def escape_drawtext(text: str) -> str:
-    return text.replace("\\", r"\\").replace(":", r"\:").replace("'", r"\\'")
+def motion_crop_filter(motion: str, duration: float) -> str:
+    """Create a subtle animated camera move from an oversized background."""
+    d = max(duration, 0.1)
+    motion = motion.lower().strip()
+
+    scale_w = round(WIDTH * 1.14)
+    scale_h = round(HEIGHT * 1.14)
+    scale = f"scale={scale_w}:{scale_h}:force_original_aspect_ratio=increase"
+
+    if motion == "push_in":
+        return (
+            f"{scale},"
+            f"scale=w='iw*(1+0.08*t/{d:.4f})':h='ih*(1+0.08*t/{d:.4f})':eval=frame,"
+            f"crop={WIDTH}:{HEIGHT}:x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})/2'"
+        )
+
+    if motion == "pull_out":
+        return (
+            f"scale={round(WIDTH * 1.23)}:{round(HEIGHT * 1.23)}:force_original_aspect_ratio=increase,"
+            f"scale=w='iw*(1-0.10*t/{d:.4f})':h='ih*(1-0.10*t/{d:.4f})':eval=frame,"
+            f"crop={WIDTH}:{HEIGHT}:x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})/2'"
+        )
+
+    if motion == "pan_left":
+        return (
+            f"{scale},crop={WIDTH}:{HEIGHT}:"
+            f"x='(iw-{WIDTH})*(1-t/{d:.4f})':y='(ih-{HEIGHT})/2'"
+        )
+
+    if motion == "pan_right":
+        return (
+            f"{scale},crop={WIDTH}:{HEIGHT}:"
+            f"x='(iw-{WIDTH})*(t/{d:.4f})':y='(ih-{HEIGHT})/2'"
+        )
+
+    if motion == "pan_up":
+        return (
+            f"{scale},crop={WIDTH}:{HEIGHT}:"
+            f"x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})*(1-t/{d:.4f})'"
+        )
+
+    if motion == "pan_down":
+        return (
+            f"{scale},crop={WIDTH}:{HEIGHT}:"
+            f"x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})*(t/{d:.4f})'"
+        )
+
+    if motion == "shake":
+        return (
+            f"{scale},crop={WIDTH}:{HEIGHT}:"
+            f"x='(iw-{WIDTH})/2+18*sin(t*42)':"
+            f"y='(ih-{HEIGHT})/2+12*cos(t*51)'"
+        )
+
+    return f"{scale},crop={WIDTH}:{HEIGHT}:x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})/2'"
 
 
-def overlay_position(position: str, width_expr: str = "overlay_w", height_expr: str = "overlay_h") -> tuple[str, str]:
-    """Return FFmpeg overlay coordinates for a simple named position."""
-    positions = {
-        "center": (f"(W-{width_expr})/2", f"(H-{height_expr})/2"),
-        "bottom": (f"(W-{width_expr})/2", f"H-{height_expr}-80"),
-        "bottom_center": (f"(W-{width_expr})/2", f"H-{height_expr}-80"),
-        "top": (f"(W-{width_expr})/2", "80"),
-        "top_center": (f"(W-{width_expr})/2", "80"),
-        "left": ("60", f"(H-{height_expr})/2"),
-        "right": (f"W-{width_expr}-60", f"(H-{height_expr})/2"),
-    }
-    return positions.get(position, positions["bottom_center"])
+def character_motion_position(position: str, motion: str) -> tuple[str, str]:
+    """Return overlay coordinates, optionally adding subtle movement."""
+    base = {
+        "center": ("(W-overlay_w)/2", "(H-overlay_h)/2"),
+        "bottom": ("(W-overlay_w)/2", "H-overlay_h-80"),
+        "bottom_center": ("(W-overlay_w)/2", "H-overlay_h-80"),
+        "top": ("(W-overlay_w)/2", "80"),
+        "top_center": ("(W-overlay_w)/2", "80"),
+        "left": ("60", "(H-overlay_h)/2"),
+        "right": ("W-overlay_w-60", "(H-overlay_h)/2"),
+        "bottom_left": ("60", "H-overlay_h-80"),
+        "bottom_right": ("W-overlay_w-60", "H-overlay_h-80"),
+    }.get(position, ("(W-overlay_w)/2", "H-overlay_h-80"))
+
+    motion = motion.lower().strip()
+    x, y = base
+    if motion == "float":
+        x = f"({x})+10*sin(t*2.2)"
+        y = f"({y})+12*sin(t*2.8)"
+    elif motion == "sway":
+        x = f"({x})+18*sin(t*1.8)"
+        y = f"({y})+5*cos(t*2.1)"
+    elif motion == "shake":
+        x = f"({x})+10*sin(t*35)"
+        y = f"({y})+8*cos(t*41)"
+    elif motion == "slide_left":
+        x = f"({x})-min(220,220*t/0.7)"
+    elif motion == "slide_right":
+        x = f"({x})+min(220,220*t/0.7)"
+    return x, y
 
 
 def render_image_shot(
     image: Path,
     duration: float,
     output: Path,
-    caption: str | None = None,
     zoom: float = 1.0,
-    position: str = "center",
+    motion: str = "static",
     character: Path | None = None,
     character_scale: float = 0.65,
     character_position: str = "bottom_center",
+    character_motion: str = "static",
 ) -> None:
-    """Render one 9:16 shot, optionally compositing a transparent character over it."""
+    """Render one dynamic 9:16 shot with optional transparent character overlay."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    fontfile = ffmpeg_filter_path(find_font())
     duration_text = f"{duration:.3f}"
 
     inputs = ["-y", "-loop", "1", "-i", ffmpeg_input_path(image)]
     if character:
         inputs += ["-loop", "1", "-i", ffmpeg_input_path(character)]
 
-    background_filters = [
-        f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase",
-        f"crop={WIDTH}:{HEIGHT}",
-    ]
+    if not 1.0 <= zoom <= 1.25:
+        raise ValueError("zoom must be between 1.0 and 1.25.")
+
+    bg_filter = motion_crop_filter(motion, duration)
+
     if zoom > 1.0:
-        background_filters.append(
-            f"zoompan=z='min(zoom+{(zoom - 1.0) / max(duration * FPS, 1):.8f},{zoom:.4f})':"
-            f"d=1:s={WIDTH}x{HEIGHT}:fps={FPS}"
+        extra = 1.0 + (zoom - 1.0) * 0.35
+        bg_filter += (
+            f",scale=w='iw*{extra:.4f}':h='ih*{extra:.4f}':eval=frame,"
+            f"crop={WIDTH}:{HEIGHT}:x='(iw-{WIDTH})/2':y='(ih-{HEIGHT})/2'"
         )
 
     if character:
         if not 0.1 <= character_scale <= 1.5:
             raise ValueError("character_scale must be between 0.1 and 1.5.")
         char_width = max(1, round(WIDTH * character_scale))
-        char_height = max(1, round(HEIGHT * character_scale))
-        char_x, char_y = overlay_position(character_position, "overlay_w", "overlay_h")
+        char_x, char_y = character_motion_position(character_position, character_motion)
         filters = (
-            f"[0:v]{','.join(background_filters)},format=rgba[bg];"
-            f"[1:v]scale=w={char_width}:h={char_height}:force_original_aspect_ratio=decrease,"
+            f"[0:v]{bg_filter},format=rgba[bg];"
+            f"[1:v]scale=w={char_width}:h=-1:force_original_aspect_ratio=decrease,"
             f"format=rgba[char];"
-            f"[bg][char]overlay=x={char_x}:y={char_y}:shortest=1:format=auto[composed]"
+            f"[bg][char]overlay=x='{char_x}':y='{char_y}':format=auto[composed]"
         )
         video_map = "[composed]"
     else:
-        filters = f"[0:v]{','.join(background_filters)}[composed]"
+        filters = f"[0:v]{bg_filter}[composed]"
         video_map = "[composed]"
-
-    if caption:
-        escaped_caption = escape_drawtext(caption)
-        filters += (
-            f";{video_map}drawtext=fontfile='{fontfile}':text='{escaped_caption}':"
-            "fontcolor=white:fontsize=64:borderw=5:bordercolor=black:"
-            "x=(w-text_w)/2:y=h*0.78[captioned]"
-        )
-        video_map = "[captioned]"
 
     run_ffmpeg([
         *inputs,
         "-filter_complex", filters,
         "-map", video_map,
         "-t", duration_text,
+        "-r", str(FPS),
         "-an",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(output),
@@ -158,7 +222,10 @@ def concat_shots(shots: list[Path], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     list_file = output.with_suffix(".concat.txt")
     list_file.write_text(
-        "".join(f"file '{shot.resolve().as_posix().replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n" for shot in shots),
+        "".join(
+            f"file '{shot.resolve().as_posix().replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'\n"
+            for shot in shots
+        ),
         encoding="utf-8",
     )
     try:
@@ -171,7 +238,7 @@ def concat_shots(shots: list[Path], output: Path) -> None:
 
 
 def render_from_scene(scene_path: Path, output: Path) -> None:
-    """Render an asset-based scene JSON into a silent vertical MP4."""
+    """Render an asset-based scene JSON into a dynamic silent vertical MP4."""
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     if not isinstance(scene, dict):
         raise ValueError("Scene JSON must contain an object.")
@@ -187,6 +254,7 @@ def render_from_scene(scene_path: Path, output: Path) -> None:
         for index, shot in enumerate(shots, 1):
             if not isinstance(shot, dict):
                 raise ValueError(f"Shot {index} must be an object.")
+
             duration = shot.get("duration")
             if not isinstance(duration, (int, float)) or duration <= 0:
                 raise ValueError(f"Shot {index} needs a positive numeric duration.")
@@ -209,38 +277,41 @@ def render_from_scene(scene_path: Path, output: Path) -> None:
                     raise ValueError(f"Shot {index} character must be a non-empty string or null.")
                 character = resolve_asset(character_value, "characters")
 
-            caption = shot.get("caption")
-            if caption is not None and not isinstance(caption, str):
-                raise ValueError(f"Shot {index} caption must be a string or null.")
-
             zoom = shot.get("zoom", 1.0)
-            if not isinstance(zoom, (int, float)) or zoom < 1.0 or zoom > 1.25:
-                raise ValueError(f"Shot {index} zoom must be between 1.0 and 1.25.")
-
+            motion = shot.get("motion", "static")
             character_scale = shot.get("character_scale", 0.65)
+            character_position = shot.get("character_position", "bottom_center")
+            character_motion = shot.get("character_motion", "static")
+
+            if not isinstance(zoom, (int, float)):
+                raise ValueError(f"Shot {index} zoom must be numeric.")
+            if not isinstance(motion, str):
+                raise ValueError(f"Shot {index} motion must be a string.")
             if not isinstance(character_scale, (int, float)):
                 raise ValueError(f"Shot {index} character_scale must be numeric.")
-
-            character_position = shot.get("character_position", "bottom_center")
             if not isinstance(character_position, str):
                 raise ValueError(f"Shot {index} character_position must be a string.")
+            if not isinstance(character_motion, str):
+                raise ValueError(f"Shot {index} character_motion must be a string.")
 
             shot_output = work_dir / f"shot_{index:03d}.mp4"
             render_image_shot(
                 background,
                 float(duration),
                 shot_output,
-                caption,
-                float(zoom),
+                zoom=float(zoom),
+                motion=motion,
                 character=character,
                 character_scale=float(character_scale),
                 character_position=character_position,
+                character_motion=character_motion,
             )
             rendered.append(shot_output)
 
         concat_shots(rendered, output)
         print(f"Created video: {output}")
         print("Audio: not required. Add your own audio separately when desired.")
+        print("Captions: not rendered; add them during editing.")
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
