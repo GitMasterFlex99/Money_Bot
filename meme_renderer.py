@@ -25,13 +25,12 @@ def make_test_scene(output: Path) -> None:
     """Render a GPU-free starter meme video using FFmpeg's built-in filters."""
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    # A simple animated test clip: dark background, large meme-style caption,
-    # and a slow zoom. This intentionally uses no external assets yet.
+    # Keep the first test deliberately simple: a vertical canvas with a
+    # centered caption. Asset compositing comes in the next renderer stage.
     filter_graph = (
         f"color=c=black:s={WIDTH}x{HEIGHT}:r={FPS}:d=8,"
         "drawtext=text='MONEY BOT TEST':fontcolor=white:fontsize=82:"
-        "x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,8)',"
-        "zoompan=z='min(zoom+0.0008,1.08)':d=1:s={WIDTH}x{HEIGHT}:fps={FPS}"
+        "x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,8)'"
     )
 
     run_ffmpeg([
@@ -48,7 +47,7 @@ def make_test_scene(output: Path) -> None:
 
 
 def render_from_scene(scene_path: Path, output: Path) -> None:
-    """Placeholder for the asset-based renderer; validates the scene format for now."""
+    """Validate a scene JSON before asset-based rendering is enabled."""
     scene = json.loads(scene_path.read_text(encoding="utf-8"))
     if not isinstance(scene, dict):
         raise ValueError("Scene JSON must contain an object.")
