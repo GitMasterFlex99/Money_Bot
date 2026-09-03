@@ -6,6 +6,8 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,12 +20,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 DB_PATH = Path(os.getenv("DB_PATH", "money_bot.db"))
 CONTENT_DIR = Path(os.getenv("CONTENT_DIR", "content"))
-DISCLOSURE = os.getenv(
-    "AFFILIATE_DISCLOSURE",
-    "This post contains affiliate links. I may earn a commission if you buy through my link.",
-)
 
-# Conservative defaults. These are guardrails, not a guarantee of platform compliance.
 BLOCKED_PATTERNS = [
     r"guaranteed?\s+(income|money|profit|returns?|results?)",
     r"guaranteed?\s+to\s+(make|earn)",
@@ -75,48 +72,120 @@ def safety_scan(text: str) -> list[str]:
     return flags
 
 
-def prompt_for(cfg: dict, product: dict | None) -> str:
-    product_block = "No specific product; create a useful niche post."
-    if product:
-        product_block = (
-            f"Product: {product.get('name', '')}\n"
-            f"Affiliate URL: {product.get('url', '')}\n"
-            f"Verified facts: {product.get('facts', [])}"
-        )
-    return f"""You are the content writer for a small affiliate creator.
+def quality_scan(text: str) -> list[str]:
+    lowered = text.lower()
+    flags = []
+    if lowered.count("also") >= 3:
+        flags.append("quality:multiple_also_jokes")
+    if lowered.count("i mean") >= 2:
+        flags.append("quality:overexplaining")
+    if lowered.count("and then") >= 4:
+        flags.append("quality:overlong_escalation")
+    return flags
 
-Niche: {cfg.get('niche')}
-Audience: {cfg.get('audience')}
-Platform: {cfg.get('platform')}
-Tone: {cfg.get('tone')}
-Goal: {cfg.get('content_goal')}
 
-{product_block}
+def load_trend_analysis() -> str:
+    candidates = [
+        Path("trend_signals.json"),
+        CONTENT_DIR / "trend_signals.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                analysis = data.get("analysis", "") if isinstance(data, dict) else ""
+                return str(analysis).strip()
+            except (OSError, json.JSONDecodeError):
+                return ""
+    return ""
 
-Create ONE original short-form content package. It must provide genuine entertainment or useful information, not spam.
 
-Rules:
-- Never invent product specifications, prices, reviews, discounts, scarcity, testimonials, or personal experience.
-- Never promise income, health outcomes, financial returns, or guaranteed results.
-- Do not impersonate a person, company, expert, or customer.
-- Do not ask viewers to manipulate likes, comments, follows, or views.
-- Do not use fake urgency or fake social proof.
-- If a product is included, make the recommendation proportionate and explain a concrete reason it may be useful.
-- Include an explicit affiliate disclosure in the caption.
-- Do not copy wording from existing creators.
+def prompt_for(cfg: dict, trend_analysis: str) -> str:
+    trend_block = trend_analysis.strip() or "No current trend intelligence is available."
+    return f"""You write original short-form shitpost scripts.
 
-Return exactly this format:
+ACCOUNT IDENTITY
+Niche: {cfg.get('niche', 'NEET, unemployed, broke, crypto, and terminal internet culture shitposts')}
+Audience: {cfg.get('audience', 'NEETs, unemployed people, broke young adults, crypto traders, and internet-native meme communities')}
+Platform: {cfg.get('platform', 'short-form video')}
+Tone: {cfg.get('tone', 'absurd, dry, chaotic, deadpan, post-ironic, and shitposty')}
+Goal: {cfg.get('content_goal', 'build a funny original NEET and crypto shitpost account; entertain first and never directly promote affiliate products or tokens')}
+
+CURRENT TREND INTELLIGENCE
+{trend_block}
+
+Use trend intelligence only as broad inspiration. Never copy, closely paraphrase,
+or reproduce a source joke, post, meme, punchline, wording, or distinctive idea.
+
+CONTENT DIRECTION
+The account is primarily about:
+- NEET life
+- unemployment
+- being broke
+- job applications and interviews
+- living with parents
+- gaming and terminal internet habits
+- unemployment bureaucracy
+- crypto and memecoin culture
+- unrealistic internet-money fantasies
+- general terminal-online behavior
+
+Crypto is a recurring part of the world, not the subject of every video.
+Do not make every video about a specific token.
+Do not force the word "NEET" into every script.
+
+CREATIVE RULES
+- Create ONE original comedic concept.
+- One central premise only.
+- Start with a mundane, relatable situation.
+- Introduce one specific absurd detail.
+- Escalate that same situation.
+- End on the strongest deadpan punchline.
+- Do not stack unrelated jokes.
+- Do not explain the joke.
+- Avoid generic TikTok language and forced slang.
+- Avoid generic tech content.
+- Avoid listicles, explainers, tutorials, news summaries, motivational content,
+  product recommendations, and token explainers.
+- Prefer simple situations that can be filmed or shown with basic footage,
+  screen recordings, captions, gaming footage, phone footage, or a talking head.
+- The script should sound like something an actual person would say, not an AI essay.
+- Keep the spoken script tight enough for roughly 20-45 seconds.
+
+SAFETY AND MONETIZATION RULES
+- Never mention affiliate links, referral links, sponsorships, monetization,
+  commissions, or promotional campaigns.
+- Never recommend a product or token.
+- Never tell viewers to buy, sell, trade, ape, invest, or gamble.
+- Never provide financial or investment advice.
+- Never fabricate news, statistics, quotes, testimonials, personal experiences,
+  urgency, scarcity, or social proof.
+- Never impersonate a real person, creator, company, or source user.
+- Never repeat slurs or hateful/derogatory terminology.
+- Never request artificial likes, follows, comments, shares, views, or engagement.
+
+OUTPUT FORMAT
+Return exactly these headings, with every heading present:
+
 HOOK:
 <one short hook>
 
+PREMISE:
+<one or two sentences describing the single comedic setup>
+
 SCRIPT:
-<30-60 second spoken script>
+<the complete spoken script>
+
+VISUALS:
+<simple visual suggestions>
 
 CAPTION:
-<caption with disclosure>
+<short natural caption>
 
 CTA:
-<a non-manipulative CTA>
+NONE
+
+CTA must be exactly NONE. Do not omit VISUALS or CAPTION.
 """
 
 
@@ -133,26 +202,36 @@ def ollama_generate(prompt: str) -> str:
         raise SystemExit(f"Could not reach Ollama at {OLLAMA_URL}: {exc}") from exc
 
 
-def parse_package(text: str) -> tuple[str, str, str, str]:
+def parse_package(text: str) -> tuple[str, str, str, str, str, str]:
     sections = {}
     current = None
     for line in text.splitlines():
-        match = re.match(r"^(HOOK|SCRIPT|CAPTION|CTA):\s*$", line.strip(), re.I)
+        match = re.match(r"^(HOOK|PREMISE|SCRIPT|VISUALS|CAPTION|CTA):\s*$", line.strip(), re.IGNORECASE)
         if match:
             current = match.group(1).upper()
             sections[current] = []
         elif current:
             sections[current].append(line)
-    required = ["HOOK", "SCRIPT", "CAPTION", "CTA"]
-    missing = [key for key in required if not "\n".join(sections.get(key, [])).strip()]
+
+    def get_section(name: str, default: str = "") -> str:
+        return "\n".join(sections.get(name, [])).strip() or default
+
+    hook = get_section("HOOK")
+    premise = get_section("PREMISE")
+    script = get_section("SCRIPT")
+    visuals = get_section("VISUALS", "Simple footage matching the script: bedroom, phone, computer screen, gaming footage, charts, job-search screen, or talking head.")
+    caption = get_section("CAPTION", "another completely normal day")
+    cta = get_section("CTA", "NONE")
+
+    missing = [name for name, value in (("HOOK", hook), ("PREMISE", premise), ("SCRIPT", script)) if not value]
     if missing:
         raise ValueError(f"Model response missing sections: {', '.join(missing)}")
-    return tuple("\n".join(sections[key]).strip() for key in required)
+
+    return hook, premise, script, visuals, caption, cta
 
 
-def save_content(cfg: dict, product: dict | None, hook: str, script: str, caption: str, cta: str, flags: list[str]):
-    product_name = product.get("name") if product else None
-    payload = "\n".join([hook, script, caption, cta])
+def save_content(cfg: dict, hook: str, premise: str, script: str, visuals: str, caption: str, cta: str, flags: list[str]):
+    payload = "\n".join([hook, premise, script, visuals, caption, cta])
     content_hash = hashlib.sha256(payload.lower().encode("utf-8")).hexdigest()
 
     conn = db()
@@ -161,11 +240,10 @@ def save_content(cfg: dict, product: dict | None, hook: str, script: str, captio
         conn.close()
         return None, "duplicate"
 
-    status = "review" if flags else "review"
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO content(content_hash, created_at, niche, product, status, script, caption, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (content_hash, now, cfg.get("niche", ""), product_name, status, script, caption, json.dumps(flags)),
+        (content_hash, now, cfg.get("niche", ""), None, "review", script, caption, json.dumps(flags)),
     )
     conn.commit()
     conn.close()
@@ -173,59 +251,199 @@ def save_content(cfg: dict, product: dict | None, hook: str, script: str, captio
     folder = CONTENT_DIR / datetime.now().strftime("%Y-%m-%d") / content_hash[:8]
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "hook.txt").write_text(hook, encoding="utf-8")
+    (folder / "premise.txt").write_text(premise, encoding="utf-8")
     (folder / "script.txt").write_text(script, encoding="utf-8")
+    (folder / "visuals.txt").write_text(visuals, encoding="utf-8")
     (folder / "caption.txt").write_text(caption, encoding="utf-8")
     (folder / "cta.txt").write_text(cta, encoding="utf-8")
-    (folder / "review.json").write_text(
-        json.dumps({"status": status, "flags": flags, "product": product_name}, indent=2),
-        encoding="utf-8",
-    )
+    (folder / "review.json").write_text(json.dumps({"status": "review", "flags": flags}, indent=2), encoding="utf-8")
     return folder, "created"
 
 
-def generate():
+def generate() -> None:
     cfg = load_config()
-    products = cfg.get("affiliate_products") or [None]
     limit = max(1, min(int(cfg.get("max_posts_per_run", 3)), 5))
+    trend_analysis = load_trend_analysis()
     created = 0
 
-    for product in products[:limit]:
-        raw = ollama_generate(prompt_for(cfg, product))
+    for _ in range(limit):
+        raw = ollama_generate(prompt_for(cfg, trend_analysis))
         try:
-            hook, script, caption, cta = parse_package(raw)
+            hook, premise, script, visuals, caption, cta = parse_package(raw)
         except ValueError as exc:
             print(f"Skipped malformed model output: {exc}")
             continue
 
-        if DISCLOSURE.lower() not in caption.lower():
-            caption = f"{caption.rstrip()}\n\n{DISCLOSURE}"
-
-        combined = "\n".join([hook, script, caption, cta])
-        flags = safety_scan(combined)
-        folder, result = save_content(cfg, product, hook, script, caption, cta, flags)
+        combined = "\n".join([hook, premise, script, visuals, caption, cta])
+        flags = safety_scan(combined) + quality_scan(combined)
+        folder, result = save_content(cfg, hook, premise, script, visuals, caption, cta, flags)
         if result == "duplicate":
             print("Skipped duplicate draft.")
             continue
         created += 1
         print(f"Created review draft: {folder}")
         if flags:
-            print("  SAFETY FLAGS: manual review required")
+            print("  FLAGS: manual review required")
 
     print(f"Done. Created {created} draft(s). Nothing was published automatically.")
 
 
-def init():
+def init() -> None:
     db().close()
     CONTENT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Initialized database: {DB_PATH}")
     print(f"Content directory: {CONTENT_DIR}")
 
 
+def launch_gui() -> None:
+    try:
+        from textual.app import App, ComposeResult
+        from textual.containers import Container, VerticalScroll
+        from textual.widgets import Button, Footer, Header, RichLog, Static
+        from textual.worker import work
+    except ImportError:
+        print("Textual is not installed. Run: pip install textual")
+        return
+
+    class MoneyBotApp(App):
+        TITLE = "Money Bot"
+        SUB_TITLE = "NEET / Crypto Shitpost Engine"
+        CSS = """
+        Screen { align: center middle; }
+        #main { width: 92%; height: 92%; border: round $accent; padding: 1 2; }
+        #title { height: auto; padding: 1; text-align: center; }
+        #menu { height: auto; padding: 1 0; }
+        Button { width: 100%; margin: 0 0 1 0; }
+        #output { height: 1fr; border: round $accent; padding: 1; }
+        """
+
+        def compose(self) -> ComposeResult:
+            yield Header()
+            with Container(id="main"):
+                yield Static("NEET / CRYPTO SHITPOST ENGINE\nGenerate, review and manage drafts", id="title")
+                with VerticalScroll(id="menu"):
+                    yield Button("Generate Drafts", id="generate")
+                    yield Button("View Latest Drafts", id="drafts")
+                    yield Button("Run Trend Scan", id="trends")
+                    yield Button("View Trend Intelligence", id="trend_view")
+                    yield Button("Run Safety Check", id="safety")
+                    yield Button("Open Content Folder", id="open_content")
+                    yield Button("Exit", id="exit")
+                yield RichLog(id="output", markup=True, wrap=True)
+            yield Footer()
+
+        def log(self, message: str) -> None:
+            self.query_one("#output", RichLog).write(message)
+
+        def on_mount(self) -> None:
+            self.log("[bold]Ready.[/bold]")
+            self.log("Choose an action from the menu.")
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            action = event.button.id
+            if action == "generate":
+                self.run_generate()
+            elif action == "drafts":
+                self.show_drafts()
+            elif action == "trends":
+                self.run_trends()
+            elif action == "trend_view":
+                self.show_trends()
+            elif action == "safety":
+                self.run_safety()
+            elif action == "open_content":
+                self.open_content()
+            elif action == "exit":
+                self.exit()
+
+        @work(thread=True)
+        def run_generate(self) -> None:
+            self.log("[bold]Generating drafts...[/bold]")
+            result = subprocess.run([sys.executable, __file__, "generate"], cwd=Path(__file__).resolve().parent, capture_output=True, text=True)
+            if result.stdout.strip():
+                self.log(result.stdout.strip())
+            if result.stderr.strip():
+                self.log(f"[red]{result.stderr.strip()}[/red]")
+            self.log("[green]Generation complete.[/green]" if result.returncode == 0 else f"[red]Generation failed (exit {result.returncode}).[/red]")
+
+        def show_drafts(self) -> None:
+            root = Path(__file__).resolve().parent
+            content_dir = root / CONTENT_DIR
+            if not content_dir.exists():
+                self.log("No content folder exists yet.")
+                return
+            files = sorted((p for p in content_dir.rglob("*.txt")), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not files:
+                self.log("No drafts found.")
+                return
+            self.log("[bold]Latest draft files:[/bold]")
+            for path in files[:30]:
+                self.log(f"\n[bold]{path.parent.name}/{path.name}[/bold]")
+                self.log(path.read_text(encoding="utf-8")[:4000])
+
+        @work(thread=True)
+        def run_trends(self) -> None:
+            root = Path(__file__).resolve().parent
+            trends_file = root / "trends.py"
+            if not trends_file.exists():
+                self.log("[red]trends.py not found.[/red]")
+                return
+            self.log("[bold]Running trend scan...[/bold]")
+            result = subprocess.run([sys.executable, str(trends_file)], cwd=root, capture_output=True, text=True)
+            if result.stdout.strip():
+                self.log(result.stdout.strip())
+            if result.stderr.strip():
+                self.log(f"[red]{result.stderr.strip()}[/red]")
+
+        def show_trends(self) -> None:
+            root = Path(__file__).resolve().parent
+            path = root / "trend_signals.json"
+            if not path.exists():
+                self.log("No trend_signals.json found.")
+                return
+            self.log(path.read_text(encoding="utf-8")[:12000])
+
+        def run_safety(self) -> None:
+            root = Path(__file__).resolve().parent
+            content_dir = root / CONTENT_DIR
+            files = sorted(content_dir.rglob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True) if content_dir.exists() else []
+            if not files:
+                self.log("No drafts found.")
+                return
+            checked = flagged = 0
+            for path in files[:30]:
+                body = path.read_text(encoding="utf-8")
+                flags = safety_scan(body) + quality_scan(body)
+                checked += 1
+                if flags:
+                    flagged += 1
+                    self.log(f"[red]{path.parent.name}/{path.name}: {', '.join(flags)}[/red]")
+                else:
+                    self.log(f"[green]{path.parent.name}/{path.name}: PASS[/green]")
+            self.log(f"Safety/quality check complete: {checked} checked, {flagged} flagged.")
+
+        def open_content(self) -> None:
+            root = Path(__file__).resolve().parent
+            folder = root / CONTENT_DIR
+            folder.mkdir(parents=True, exist_ok=True)
+            if sys.platform.startswith("win"):
+                os.startfile(str(folder))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+            self.log(f"Opened: {folder}")
+
+    MoneyBotApp().run()
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Money Bot affiliate content assistant")
-    parser.add_argument("command", choices=["init", "generate"])
+    parser = argparse.ArgumentParser(description="Money Bot content assistant")
+    parser.add_argument("command", choices=["init", "generate", "gui"])
     args = parser.parse_args()
     if args.command == "init":
         init()
-    else:
+    elif args.command == "generate":
         generate()
+    else:
+        launch_gui()
