@@ -162,28 +162,28 @@ SAFETY AND MONETIZATION RULES
 - Never request artificial likes, follows, comments, shares, views, or engagement.
 
 OUTPUT FORMAT
-Return exactly these headings, with every heading present:
+Return ONLY the six sections below. Do not add an introduction, explanation, markdown fence, or extra headings.
+Use the headings exactly as written. Put the content on the next line.
 
 HOOK:
-<one short hook>
+One short attention-grabbing opening sentence.
 
 PREMISE:
-<one or two sentences describing the single comedic setup>
+One or two sentences describing the single comedic setup.
 
 SCRIPT:
-<the complete spoken script>
+The complete spoken script. The hook may be used as the opening line, but the script must still be complete.
 
 VISUALS:
-<simple visual suggestions>
+Simple visual suggestions.
 
 CAPTION:
-<short natural caption>
+A short natural caption.
 
 CTA:
 NONE
 
-CTA must be exactly NONE. Do not omit VISUALS or CAPTION.
-"""
+All six headings are mandatory. CTA must be exactly NONE."""
 
 
 def ollama_generate(prompt: str) -> str:
@@ -202,13 +202,18 @@ def ollama_generate(prompt: str) -> str:
 def parse_package(text: str) -> tuple[str, str, str, str, str, str]:
     sections = {}
     current = None
-    for line in text.splitlines():
-        match = re.match(r"^(HOOK|PREMISE|SCRIPT|VISUALS|CAPTION|CTA):\s*$", line.strip(), re.IGNORECASE)
+    aliases = {"HOOK": "HOOK", "PREMISE": "PREMISE", "SCRIPT": "SCRIPT", "VISUALS": "VISUALS", "CAPTION": "CAPTION", "CTA": "CTA"}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        match = re.match(r"^(HOOK|PREMISE|SCRIPT|VISUALS|CAPTION|CTA)\s*:\s*(.*)$", line, re.IGNORECASE)
         if match:
-            current = match.group(1).upper()
-            sections[current] = []
+            current = aliases[match.group(1).upper()]
+            sections.setdefault(current, [])
+            inline = match.group(2).strip()
+            if inline:
+                sections[current].append(inline)
         elif current:
-            sections[current].append(line)
+            sections[current].append(raw_line)
 
     def get_section(name: str, default: str = "") -> str:
         return "\n".join(sections.get(name, [])).strip() or default
