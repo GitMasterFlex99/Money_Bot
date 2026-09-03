@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import re
 from pathlib import Path
 
 import requests
@@ -13,6 +14,7 @@ load_dotenv()
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 CONTENT_DIR = Path(os.getenv("CONTENT_DIR", "content"))
+MAX_ATTEMPTS = 3
 
 THEMES = [
     "NEET / unemployment absurdity",
@@ -57,7 +59,77 @@ def latest_drafts(limit: int = 3) -> list[Path]:
     return folders
 
 
-def build_prompt(folder: Path) -> str:
+def extract_section(text: str, name: str) -> str:
+    pattern = re.compile(
+        rf"^\s*{re.escape(name)}\s*:\s*(.*?)(?=^\s*[A-Z][A-Z /_-]+\s*:|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
+    reasons: list[str] = []
+    upper = output.upper()
+
+    if "CONCEPT:" not in upper or "SHOTS:" not in upper or "MASTER VIDEO PROMPT:" not in upper:
+        reasons.append("missing required sections")
+
+    shot_matches = re.findall(r"^\s*SHOT\s+\d+\s*[—-]\s*(\d+(?:\.\d+)?)\s*SECONDS?", output, re.IGNORECASE | re.MULTILINE)
+    if not shot_matches:
+        reasons.append("no parseable shots")
+    else:
+        total = sum(float(value) for value in shot_matches)
+        if total > 12:
+            reasons.append(f"duration is {total:g} seconds")
+        if len(shot_matches) > 4:
+            reasons.append("more than 4 shots")
+
+    dialogue_lines = re.findall(r"DIALOGUE/VO:\s*(.+)", output, re.IGNORECASE)
+    spoken = [line for line in dialogue_lines if line.strip().upper() not in {"NONE", "(NONE)", "SILENCE", "*SILENCE*"}]
+    if len(spoken) > 2:
+        reasons.append("too much dialogue")
+
+    reaction_phrases = [
+        "looks sad", "looks angry", "looks embarrassed", "stares at the camera",
+        "stares into the camera", "breathes heavily", "sighs", "looks disappointed",
+        "contorted in disappointment", "reacts in disappointment", "reaction shot",
+    ]
+    if any(phrase in output.lower() for phrase in reaction_phrases):
+        reasons.append("reaction-only ending language")
+
+    caption = extract_section(output, "CAPTION TEXT")
+    explanatory_caption = [
+        "where", "because", "when", "this is", "this means", "new gaming pc",
+        "new gaming rig", "explained", "literally", "in conclusion",
+    ]
+    if len(caption) > 90 or any(word in caption.lower() for word in explanatory_caption):
+        reasons.append("explanatory caption")
+
+    screen_text = [
+        "screen displays", "screen reads", "monitor displays", "monitor reads",
+        "displays a cryptic message", "text appears on screen", "message appears on screen",
+    ]
+    if any(phrase in output.lower() for phrase in screen_text):
+        reasons.append("depends on generated screen text")
+
+    source_terms = {term.lower() for term in re.findall(r"\b[a-zA-Z][a-zA-Z0-9_-]{3,}\b", source_script)}
+    concept = extract_section(output, "CONCEPT").lower()
+    common_terms = {term for term in source_terms if term in concept}
+    source_markers = {"ebay", "thinkpad", "lenovo", "listing", "parts", "resell", "sold", "auction"}
+    if common_terms & source_markers:
+        reasons.append("reused old source premise markers")
+
+    if "character simply" in output.lower():
+        reasons.append("generic reaction language")
+
+    if re.search(r"FINAL.*(?:looks|stares|reacts|sad|angry|embarrassed)", output, re.IGNORECASE | re.DOTALL):
+        reasons.append("final beat may be reaction-only")
+
+    return not reasons, reasons
+
+
+def build_prompt(folder: Path, rejection_feedback: str = "") -> str:
     def read(name: str) -> str:
         candidates = [folder / name, folder / f"{folder.name}_{name}"]
         for path in candidates:
@@ -74,6 +146,15 @@ def build_prompt(folder: Path) -> str:
     source_premise = read("premise.txt")
     source_script = read("script.txt")
     source_visuals = read("visuals.txt")
+
+    feedback_block = ""
+    if rejection_feedback:
+        feedback_block = f"""
+
+AUTOMATIC QUALITY CHECK REJECTED THE PREVIOUS ATTEMPT
+Problems detected: {rejection_feedback}
+You MUST make a substantially different concept that fixes every listed problem. Do not merely rewrite the rejected attempt.
+"""
 
     return f"""You are the FINAL MEME DIRECTOR for a short-form shitpost account.
 
@@ -114,6 +195,7 @@ DO NOT:
 - make an eBay/ThinkPad/computer resale joke merely because the source mentions those things
 
 If the source and your new concept have the same central premise, THROW YOUR CONCEPT AWAY AND MAKE ANOTHER ONE.
+{feedback_block}
 
 CREATIVE PRIORITY
 1. RANDOMLY SELECTED THEME
@@ -128,8 +210,8 @@ CREATIVE PRIORITY
 THIS IS A MEME, NOT A STORY
 Create a 6-12 second visual shitpost. It should feel like a bizarre internet image suddenly came to life.
 
-Think in this structure:
-SETUP IMAGE -> ONE STUPID ESCALATION -> UNEXPECTED VISUAL REVEAL -> CUT
+Use this structure:
+SETUP IMAGE -> ONE STUPID ESCALATION -> UNEXPECTED VISUAL REVEAL/CONSEQUENCE -> CUT
 
 Do not write a conventional narrative with exposition, dialogue, emotional arc, or multiple story beats.
 
@@ -143,6 +225,7 @@ GOOD:
 - character opens something expecting one thing; completely different thing is inside
 - tiny everyday inconvenience causes an absurdly disproportionate physical response
 - character finally achieves the goal; the result is obviously useless
+- a mundane object unexpectedly behaves like something completely different
 
 BAD:
 - character looks sad
@@ -153,10 +236,18 @@ BAD:
 - generic zoom on face
 - narrator explains the joke
 - caption tells the audience what they should find funny
+- fake computer error/message as the primary punchline
 
 HARD RULE: If the final shot could be replaced with "character reacts" and the joke still works, the concept is INVALID. Regenerate it.
 
-The reveal should preferably be visible without readable AI-generated text. If text is important, put it in CAPTION TEXT for editing rather than relying on generated lettering.
+PREFER PHYSICAL REVEALS
+Whenever possible, make the punchline something physically visible: an object breaks, pops, transforms, fails, reveals something ridiculous, produces the wrong result, or causes an absurd consequence. Do not rely on computer-screen text.
+
+DIALOGUE MINIMIZATION
+Prefer ZERO dialogue. The visual should carry the joke. If dialogue is necessary, use ONE short line total. Never write a speech, conversation, narration, or multiple explanatory lines.
+
+CAPTION MINIMIZATION
+CAPTION TEXT should usually be 0-6 words. It is an optional meme label, not an explanation of the joke. Good examples: "locked in", "bro is cooked", "MAXXING", "it's over", "we are so back". Do not write a sentence explaining the premise.
 
 STYLE
 Broad internet shitpost energy: NEET, Chud, Doomer, wizardposting, gaming, broke-life, terminally-online behavior, cursed maxxing, occasional crypto/memecoin jokes.
@@ -189,8 +280,8 @@ CORE RULES
 3. 1-4 shots maximum.
 4. Start immediately on the funny situation.
 5. Every shot contains visible action.
-6. Zero dialogue is preferred when the visual gag works without it.
-7. If dialogue is used, maximum two very short lines.
+6. Zero dialogue is preferred.
+7. If dialogue is used, maximum ONE short line total.
 8. Final shot contains the actual reveal/consequence, NOT merely a reaction.
 9. Never explain the joke.
 10. Keep props and characters consistent.
@@ -230,13 +321,13 @@ SHOTS:
 SHOT 1 — X seconds
 VISUAL: ...
 CAMERA: ...
-DIALOGUE/VO: ...
+DIALOGUE/VO: NONE
 SOUND: ...
 
 SHOT 2 — X seconds
 VISUAL: ...
 CAMERA: ...
-DIALOGUE/VO: ...
+DIALOGUE/VO: NONE
 SOUND: ...
 
 Add SHOT 3 and SHOT 4 only when necessary.
@@ -248,15 +339,15 @@ NEGATIVE PROMPT:
 photorealism, realistic humans, Hollywood realism, commercial polish, long cinematic pacing, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, teleporting objects, unreadable AI-generated text, malformed hands, extra limbs, watermarks, logos, random cinematic effects, unnecessary camera movement
 
 CAPTION TEXT:
-Only short captions for editing.
+Only a very short optional meme caption, preferably 0-6 words. Never explain the joke.
 
 VOICEOVER:
-NONE unless genuinely necessary.
+NONE unless absolutely necessary.
 
 EDITING NOTES:
 Hard cuts, exact pacing, caption timing, sound effects, and punchline timing.
 
-FINAL REJECTION TEST
+FINAL VALIDATION
 Silently reject and regenerate before answering if ANY apply:
 - The new idea is recognizably the old script with details changed.
 - The source's central premise is still driving the joke.
@@ -265,8 +356,11 @@ Silently reject and regenerate before answering if ANY apply:
 - The result is longer than 12 seconds.
 - More than 4 shots are needed.
 - There is more than one central joke.
+- Any shot contains a long speech or explanatory narration.
 - The final shot is only a facial reaction.
-- There is no concrete visual reveal, reversal, failure, or absurd consequence.
+- The final beat does not contain a concrete physical reveal, reversal, failure, or absurd consequence.
+- The punchline depends on generated screen text.
+- The caption explains the joke instead of enhancing it.
 - It needs explanatory narration to be funny.
 - It resembles an advertisement, short film, tutorial, explainer, or conventional skit.
 - It is photorealistic.
@@ -276,10 +370,27 @@ Do NOT include affiliate links, monetization instructions, financial advice, or 
 
 
 def generate_for(folder: Path) -> None:
-    output = ollama(build_prompt(folder))
-    output_path = folder / f"{folder.name}_video_prompt.txt"
-    output_path.write_text(output, encoding="utf-8")
-    print(f"Created AI video package: {output_path}")
+    source_script_path = folder / "script.txt"
+    if not source_script_path.exists():
+        matches = sorted(folder.glob("*_script.txt"))
+        source_script_path = matches[0] if matches else source_script_path
+    source_script = source_script_path.read_text(encoding="utf-8") if source_script_path.exists() else ""
+
+    last_reasons = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        output = ollama(build_prompt(folder, last_reasons))
+        valid, reasons = quality_check(output, source_script)
+        if valid:
+            output_path = folder / f"{folder.name}_video_prompt.txt"
+            output_path.write_text(output, encoding="utf-8")
+            print(f"Created AI video package: {output_path}")
+            if attempt > 1:
+                print(f"Accepted after {attempt} generation attempts.")
+            return
+        last_reasons = "; ".join(reasons)
+        print(f"Rejected video prompt attempt {attempt}: {last_reasons}")
+
+    raise RuntimeError(f"Could not produce a valid meme video prompt after {MAX_ATTEMPTS} attempts. Last problems: {last_reasons}")
 
 
 def main() -> None:
@@ -297,7 +408,7 @@ def main() -> None:
             generate_for(folder)
         except requests.RequestException as exc:
             print(f"Skipped {folder}: could not reach Ollama: {exc}")
-        except OSError as exc:
+        except (OSError, RuntimeError) as exc:
             print(f"Skipped {folder}: {exc}")
 
     print("Done. No video was published or uploaded automatically.")
