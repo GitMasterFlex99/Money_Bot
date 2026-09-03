@@ -23,7 +23,6 @@ def run_ffmpeg(args: list[str]) -> None:
 
 
 def find_font() -> Path:
-    """Find a standard Windows font without requiring Fontconfig."""
     candidates = [
         Path(r"C:\Windows\Fonts\arial.ttf"),
         Path(r"C:\Windows\Fonts\segoeui.ttf"),
@@ -44,7 +43,6 @@ def ffmpeg_input_path(path: Path) -> str:
 
 
 def make_test_scene(output: Path) -> None:
-    """Render an 8-second GPU-free renderer test."""
     output.parent.mkdir(parents=True, exist_ok=True)
     fontfile = ffmpeg_filter_path(find_font())
     filter_graph = (
@@ -60,7 +58,6 @@ def make_test_scene(output: Path) -> None:
 
 
 def resolve_asset(value: str, category: str) -> Path:
-    """Resolve an asset relative to the repository's assets directory."""
     raw = Path(value)
     candidates = [raw, ASSET_ROOT / category / raw]
     for candidate in candidates:
@@ -127,34 +124,34 @@ def motion_crop_filter(motion: str, duration: float) -> str:
 
 
 def character_motion_position(position: str, motion: str) -> tuple[str, str]:
-    """Return overlay coordinates, optionally adding subtle movement."""
+    """Keep the character planted on the floor; only allow believable horizontal motion."""
     base = {
         "center": ("(W-overlay_w)/2", "(H-overlay_h)/2"),
-        "bottom": ("(W-overlay_w)/2", "H-overlay_h-80"),
-        "bottom_center": ("(W-overlay_w)/2", "H-overlay_h-80"),
+        "bottom": ("(W-overlay_w)/2", "H-overlay_h-70"),
+        "bottom_center": ("(W-overlay_w)/2", "H-overlay_h-70"),
         "top": ("(W-overlay_w)/2", "80"),
         "top_center": ("(W-overlay_w)/2", "80"),
         "left": ("60", "(H-overlay_h)/2"),
         "right": ("W-overlay_w-60", "(H-overlay_h)/2"),
-        "bottom_left": ("60", "H-overlay_h-80"),
-        "bottom_right": ("W-overlay_w-60", "H-overlay_h-80"),
-    }.get(position, ("(W-overlay_w)/2", "H-overlay_h-80"))
+        "bottom_left": ("60", "H-overlay_h-70"),
+        "bottom_right": ("W-overlay_w-60", "H-overlay_h-70"),
+    }.get(position, ("(W-overlay_w)/2", "H-overlay_h-70"))
 
     motion = motion.lower().strip()
     x, y = base
-    if motion == "float":
-        x = f"({x})+10*sin(t*2.2)"
-        y = f"({y})+12*sin(t*2.8)"
-    elif motion == "sway":
-        x = f"({x})+18*sin(t*1.8)"
-        y = f"({y})+5*cos(t*2.1)"
-    elif motion == "shake":
-        x = f"({x})+10*sin(t*35)"
-        y = f"({y})+8*cos(t*41)"
-    elif motion == "slide_left":
+    if motion == "slide_left":
         x = f"({x})-min(220,220*t/0.7)"
     elif motion == "slide_right":
         x = f"({x})+min(220,220*t/0.7)"
+    elif motion in {"static", "none", "grounded"}:
+        pass
+    elif motion in {"float", "sway"}:
+        # Deprecated intentionally: these made a standing character appear to hover.
+        pass
+    elif motion == "shake":
+        x = f"({x})+10*sin(t*35)"
+    else:
+        raise ValueError("character_motion must be static, grounded, slide_left, slide_right, or shake.")
     return x, y
 
 
@@ -169,7 +166,7 @@ def render_image_shot(
     character_position: str = "bottom_center",
     character_motion: str = "static",
 ) -> None:
-    """Render one dynamic 9:16 shot with optional transparent character overlay."""
+    """Render one dynamic 9:16 shot with a grounded transparent character overlay."""
     output.parent.mkdir(parents=True, exist_ok=True)
     duration_text = f"{duration:.3f}"
 
@@ -196,9 +193,13 @@ def render_image_shot(
         char_x, char_y = character_motion_position(character_position, character_motion)
         filters = (
             f"[0:v]{bg_filter},format=rgba[bg];"
-            f"[1:v]scale=w={char_width}:h=-1:force_original_aspect_ratio=decrease,"
-            f"format=rgba[char];"
-            f"[bg][char]overlay=x='{char_x}':y='{char_y}':format=auto[composed]"
+            f"[1:v]scale=w={char_width}:h=-1:force_original_aspect_ratio=decrease,format=rgba[char];"
+            # Grounding shadow is locked to the character's feet and never moves vertically.
+            f"color=c=black@0.30:s=420x70,format=rgba,"
+            "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+            "a='alpha(X,Y)*(1-abs(2*Y/H-1))*0.55'[shadow];"
+            f"[bg][shadow]overlay=x='({char_x})+(overlay_w-420)/2':y='H-82'[grounded];"
+            f"[grounded][char]overlay=x='{char_x}':y='{char_y}':format=auto[composed]"
         )
         video_map = "[composed]"
     else:
