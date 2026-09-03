@@ -1,36 +1,48 @@
 # Money Bot
 
-> A local-first AI content engine for original short-form internet shitposts.
+> Local-first AI content engine for original short-form internet shitposts.
 
-Money Bot uses a local Ollama model to turn a configurable niche and lightweight trend intelligence into short-form content drafts. It includes safety checks, duplicate detection, a review workflow, a terminal CLI, and a small Textual desktop-style interface.
+Money Bot combines local Ollama content generation, read-only trend intelligence, safety checks, draft review, and a GPU-free FFmpeg renderer into one small workflow for creating short-form meme videos.
 
-The project is intentionally **local-first and $0-first**. It does not automatically publish content or interact with social platforms.
+**$0-first. Local-first. Human-reviewed. No automatic posting.**
 
 ## What it does
 
 ```text
-Trend sources ──┐
-                ├──> Ollama ──> Draft ──> Safety / Quality ──> Human Review
-Niche config ───┘                                      │
-                                                       └──> Video prompt
+Trend signals ──┐
+                ├──> Ollama ──> Draft ──> Safety / Review ──> Video concept
+Niche config ───┘                                             │
+                                                             v
+                                                     FFmpeg meme renderer
+                                                             │
+                                                             v
+                                                        9:16 MP4
+                                                             │
+                                                             v
+                                                     Human review/upload
 ```
 
 ### Content generation
 
-- Generates original short-form hooks, premises, scripts, visuals, captions, and CTAs.
-- Uses `config.json` for the account identity, audience, tone, and posting limit.
-- Uses local Ollama inference by default, so no paid LLM API is required.
-- Saves drafts to dated folders under `content/` and tracks them in SQLite.
+- Generates hooks, premises, scripts, visuals, captions, and CTAs.
+- Uses `config.json` for niche, audience, tone, and generation limits.
+- Uses local Ollama inference; no paid LLM API is required.
+- Stores generated drafts in dated `content/` folders and tracks them in SQLite.
+- Includes a Textual desktop-style GUI and terminal CLI.
 
 ### Trend intelligence
 
-`trends.py` gathers read-only public signals and feeds them to the content generator as broad inspiration. Trend data is treated as an input, not something to copy.
+`trends.py` collects read-only public signals from supported sources and converts them into broad creative inspiration. Source material is not intended to be copied, reposted, or paraphrased into near-duplicates.
 
-### Video ideation
+### Video concepts
 
-`video_prompts.py` turns recent drafts into short, video-native meme concepts. The current direction favors simple visual gags, Wojak-style meme characters, fast cuts, physical punchlines, and 9:16 output.
+`video_prompts.py` converts drafts into short-form, video-native concepts. The prompt system separates **WOJAK_SHITPOST** content from **DREAMCORE** content so the two visual styles are not mixed accidentally.
 
-**Video generation requires either a subscription/free allowance from an external AI video service or a suitable local video-generation model.** Money Bot generates the prompts; it does **not** include a hosted video-generation service or automatically generate/upload videos itself. This keeps the core project usable without requiring a paid video API.
+### GPU-free video rendering
+
+`meme_renderer.py` assembles local image assets into silent 9:16 MP4 videos using FFmpeg. It supports multiple shots, camera movement, impact shake, grounded transparent character overlays, per-shot character scale/position, and automatic shot concatenation.
+
+The renderer does **not** require a GPU, paid video service, voice model, or generated speech. Add captions and audio during editing when desired.
 
 ## Safety by design
 
@@ -38,23 +50,23 @@ Money Bot deliberately keeps a human in the loop.
 
 It does not:
 
-- auto-post to TikTok, Instagram, X, or other social platforms
-- create accounts in bulk
-- automate likes, follows, comments, or engagement manipulation
-- impersonate people, creators, or companies
-- fabricate testimonials, statistics, urgency, scarcity, or social proof
-- provide investment advice or token recommendations
-- promote affiliate products inside generated videos
+- Auto-post to TikTok, Instagram, X, or other social platforms
+- Create accounts in bulk
+- Automate likes, follows, comments, or engagement manipulation
+- Impersonate people, creators, or companies
+- Fabricate testimonials, statistics, urgency, scarcity, or social proof
+- Provide investment advice or token recommendations
+- Put affiliate-product promotion inside generated videos
 
-The safety layer flags common high-risk patterns, while final publication decisions remain with the user.
+Trend intelligence is used for creative direction, not copying source posts or making financial recommendations.
 
 ## Requirements
 
 - Python 3.11+
 - [Ollama](https://ollama.com/)
-- A local Ollama model, such as `llama3.2`
+- A local Ollama model such as `llama3.2`
 - Git
-- For AI video generation: either an external video-generation service with available credits/subscription, or a compatible local video model
+- FFmpeg (required for video rendering)
 
 Python dependencies are listed in `requirements.txt`.
 
@@ -72,13 +84,11 @@ ollama pull llama3.2
 python money_bot.py init
 ```
 
-If PowerShell blocks virtual-environment activation:
+Verify FFmpeg:
 
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+ffmpeg -version
 ```
-
-Then activate `.venv` again.
 
 ## Quick start — Linux / macOS
 
@@ -91,24 +101,12 @@ pip install -r requirements.txt
 cp .env.example .env
 ollama pull llama3.2
 python money_bot.py init
+ffmpeg -version
 ```
 
 ## Configure your account
 
-Edit `config.json` before generating content. The checked-in file is a safe example configuration; replace the niche, audience, tone, and other fields with your own project details.
-
-Example:
-
-```json
-{
-  "niche": "NEET, unemployed, broke, crypto, and terminal internet culture shitposts",
-  "audience": "NEETs, unemployed people, broke young adults, crypto traders, and internet-native meme communities",
-  "platform": "short-form video",
-  "tone": "absurd, dry, chaotic, deadpan, post-ironic, and shitposty",
-  "content_goal": "build a funny original account; entertain first and never directly promote affiliate products or tokens",
-  "max_posts_per_run": 3
-}
-```
+Edit `config.json` to change the account identity and content direction. The repository includes the project's current configuration.
 
 Do not put API keys, private keys, passwords, or other secrets in `config.json`. Use `.env` for local secrets and keep it uncommitted.
 
@@ -118,37 +116,15 @@ Do not put API keys, private keys, passwords, or other secrets in `config.json`.
 python money_bot.py generate
 ```
 
-Drafts are saved in:
+Drafts are saved under `content/YYYY-MM-DD/<content-id>/` with hook, premise, script, visuals, caption, CTA, and review files. Every draft starts in review status.
 
-```text
-content/
-└── YYYY-MM-DD/
-    └── <content-id>/
-        ├── hook.txt
-        ├── premise.txt
-        ├── script.txt
-        ├── visuals.txt
-        ├── caption.txt
-        ├── cta.txt
-        └── review.json
-```
-
-Every generated draft starts in `review` status. Review it before publishing anywhere.
-
-## Run the GUI
+## GUI
 
 ```bash
 python money_bot.py gui
 ```
 
-The interface provides shortcuts for:
-
-- Generate Drafts
-- View Latest Drafts
-- Run Trend Scan
-- View Trend Intelligence
-- Run Safety Check
-- Open Content Folder
+The GUI provides shortcuts for generating drafts, viewing drafts, running trend scans, viewing trend intelligence, running safety checks, and opening the content folder.
 
 ## Trend scan
 
@@ -156,72 +132,88 @@ The interface provides shortcuts for:
 python trends.py
 ```
 
-Trend collection is read-only. It is intended to identify broad themes and behaviors that can inspire original content, not to reproduce source material.
+Trend collection is read-only and is intended to identify broad themes and online behavior that can inspire original content.
 
 ## Generate video concepts
 
-After you have drafts:
+After generating drafts:
 
 ```bash
 python video_prompts.py --limit 1
 ```
 
-The tool creates a unique video-prompt file inside the selected draft folder. The output is designed to be pasted into an external AI video generator manually.
+The tool creates a video concept/prompt file inside the selected draft folder.
 
-Current video direction:
+Built-in styles are deliberately separated:
 
-- 6–12 second meme clips
-- 1–4 shots
-- 9:16 vertical
-- Wojak-style meme characters
-- simple 2D / 2.5D / low-poly / stylized animation
-- physical visual punchlines
-- minimal dialogue
-- consistent characters, props, rooms, and devices
-- no photorealistic or Hollywood-style presentation
+- `WOJAK_SHITPOST` — Wojak-family meme characters, internet culture, visual gags, fast cuts, and absurd escalation.
+- `DREAMCORE` — surreal dreamcore environments and the separate wizard character/content style.
 
-## Environment variables
+## Render a video locally
 
-Copy `.env.example` to `.env` and adjust only what you need.
+Renderer test:
 
-Common settings include:
-
-```text
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=llama3.2
-DB_PATH=money_bot.db
-CONTENT_DIR=content
+```bash
+python meme_renderer.py test --output content/renderer_test.mp4
 ```
+
+Asset-based scene:
+
+```bash
+python meme_renderer.py scene scenes/example_uneet_monday.json --output content/dynamic_test.mp4
+```
+
+Scene JSON uses one object per shot. Assets are resolved from `assets/backgrounds/` and `assets/characters/` unless a direct path is supplied.
+
+The renderer outputs silent MP4 files. Captions and audio are intentionally separate editing layers.
 
 ## Project layout
 
 ```text
 Money_Bot/
-├── money_bot.py       # content generation, safety checks, CLI and GUI
-├── trends.py          # read-only trend intelligence collection
-├── video_prompts.py   # short-form AI video concept generation
-├── config.json        # account/content configuration
-├── .env.example       # local environment template
-├── requirements.txt   # Python dependencies
-└── README.md          # project documentation
+├── money_bot.py              # content generation, safety, CLI and GUI
+├── trends.py                 # read-only trend intelligence
+├── video_prompts.py          # video-native concept generation
+├── meme_renderer.py          # GPU-free FFmpeg video renderer
+├── config.json               # account/content configuration
+├── .env.example              # local environment template
+├── requirements.txt          # Python dependencies
+├── assets/                   # characters, backgrounds, props and audio
+├── scenes/                   # example renderer scenes
+├── .github/workflows/        # automated syntax checks
+└── README.md                 # documentation
 ```
 
-## Roadmap
+## Status
+
+Money Bot is packaged as a complete local content-generation and meme-rendering toolkit.
+
+Included:
 
 - [x] Local Ollama content generation
 - [x] Safety and quality checks
 - [x] SQLite draft tracking
-- [x] Trend intelligence
+- [x] Read-only trend intelligence
 - [x] Textual GUI
 - [x] Video-native prompt generation
-- [ ] Optional FFmpeg template rendering
-- [ ] Analytics and revenue tracking
-- [ ] Optional platform integrations with manual approval and conservative limits
+- [x] Separate Wojak and Dreamcore style systems
+- [x] GPU-free FFmpeg renderer
+- [x] Dynamic camera movement and grounded character compositing
+- [x] Example scene
+- [x] Automated Python syntax checks
+
+Not included by design:
+
+- Automatic social-media posting
+- Paid AI-video API dependency
+- GPU-dependent video generation
+- Automated engagement
+- Guaranteed monetization or income
 
 ## Disclaimer
 
-This is an experimental content-generation project, not a guaranteed income system. Generated material can contain errors and should be reviewed before publication. Always follow the current rules of the platform and any affiliate program you use.
+This is an experimental content-generation toolkit, not a guaranteed income system. Generated material can contain errors and should be reviewed before publication. Always follow the current rules of the platform and any affiliate program you use.
 
 ## License
 
-No license is currently included. Unless a license is added to this repository, the default copyright rules apply to the repository's original code.
+MIT License. See `LICENSE`.
