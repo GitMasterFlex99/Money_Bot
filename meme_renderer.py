@@ -21,16 +21,38 @@ def run_ffmpeg(args: list[str]) -> None:
         raise RuntimeError(result.stderr[-4000:])
 
 
+def find_font() -> Path:
+    """Find a standard Windows font without requiring a Fontconfig installation."""
+    candidates = [
+        Path(r"C:\Windows\Fonts\arial.ttf"),
+        Path(r"C:\Windows\Fonts\segoeui.ttf"),
+        Path(r"C:\Windows\Fonts\calibri.ttf"),
+    ]
+    for font in candidates:
+        if font.is_file():
+            return font
+    raise RuntimeError(
+        "No usable Windows font was found. Expected Arial, Segoe UI, or Calibri "
+        "under C:\\Windows\\Fonts."
+    )
+
+
+def ffmpeg_filter_path(path: Path) -> str:
+    """Escape a Windows font path for FFmpeg's filter syntax."""
+    return str(path).replace("\\", "/").replace(":", r"\:")
+
+
 def make_test_scene(output: Path) -> None:
     """Render a GPU-free starter meme video using FFmpeg's built-in filters."""
     output.parent.mkdir(parents=True, exist_ok=True)
+    fontfile = ffmpeg_filter_path(find_font())
 
-    # Keep the first test deliberately simple: a vertical canvas with a
-    # centered caption. Asset compositing comes in the next renderer stage.
+    # Explicit fontfile avoids FFmpeg trying to initialize Fontconfig on Windows.
     filter_graph = (
         f"color=c=black:s={WIDTH}x{HEIGHT}:r={FPS}:d=8,"
-        "drawtext=text='MONEY BOT TEST':fontcolor=white:fontsize=82:"
-        "x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t,0,8)'"
+        f"drawtext=fontfile='{fontfile}':text='MONEY BOT TEST':"
+        "fontcolor=white:fontsize=82:"
+        "x=(w-text_w)/2:y=(h-text_h)/2"
     )
 
     run_ffmpeg([
