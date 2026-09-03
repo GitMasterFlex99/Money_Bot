@@ -1,0 +1,15 @@
+{
+  "niche": "useful PC accessories and budget tech",
+  "audience": "people who want practical tech upgrades without overspending",
+  "platform": "short-form video",
+  "tone": "funny, useful, honest",
+  "affiliate_products": [
+    {
+      "name": "Example Product",
+      "url": "PASTE_YOUR_AFFILIATE_URL_HERE",
+      "facts": ["Replace this with verified product facts"]
+    }
+  ],
+  "content_goal": "educate or entertain first, then give a clear reason to check the product",
+  "max_posts_per_run": 3
+}
