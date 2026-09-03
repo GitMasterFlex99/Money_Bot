@@ -328,12 +328,12 @@ def launch_gui() -> None:
                 yield RichLog(id="output", markup=True, wrap=True)
             yield Footer()
 
-        def log(self, message: str) -> None:
+        def write_output(self, message: str) -> None:
             self.query_one("#output", RichLog).write(message)
 
         def on_mount(self) -> None:
-            self.log("[bold]Ready.[/bold]")
-            self.log("Choose an action from the menu.")
+            self.write_output("[bold]Ready.[/bold]")
+            self.write_output("Choose an action from the menu.")
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             action = event.button.id
@@ -353,64 +353,64 @@ def launch_gui() -> None:
                 self.exit()
 
         def run_generate(self) -> None:
-            self.log("[bold]Generating drafts...[/bold]")
+            self.write_output("[bold]Generating drafts...[/bold]")
             result = subprocess.run([sys.executable, __file__, "generate"], cwd=Path(__file__).resolve().parent, capture_output=True, text=True)
             if result.stdout.strip():
-                self.log(result.stdout.strip())
+                self.write_output(result.stdout.strip())
             if result.stderr.strip():
-                self.log(f"[red]{result.stderr.strip()}[/red]")
-            self.log("[green]Generation complete.[/green]" if result.returncode == 0 else f"[red]Generation failed (exit {result.returncode}).[/red]")
+                self.write_output(f"[red]{result.stderr.strip()}[/red]")
+            self.write_output("[green]Generation complete.[/green]" if result.returncode == 0 else f"[red]Generation failed (exit {result.returncode}).[/red]")
 
         def show_drafts(self) -> None:
             root = Path(__file__).resolve().parent
             content_dir = root / CONTENT_DIR
             if not content_dir.exists():
-                self.log("No content folder exists yet.")
+                self.write_output("No content folder exists yet.")
                 return
             files = sorted((p for p in content_dir.rglob("*.txt")), key=lambda p: p.stat().st_mtime, reverse=True)
             if not files:
-                self.log("No drafts found.")
+                self.write_output("No drafts found.")
                 return
-            self.log("[bold]Latest draft files:[/bold]")
+            self.write_output("[bold]Latest draft files:[/bold]")
             for path in files[:30]:
-                self.log(f"\n[bold]{path.parent.name}/{path.name}[/bold]")
-                self.log(path.read_text(encoding="utf-8")[:4000])
+                self.write_output(f"\n[bold]{path.parent.name}/{path.name}[/bold]")
+                self.write_output(path.read_text(encoding="utf-8")[:4000])
 
         def run_trends(self) -> None:
             root = Path(__file__).resolve().parent
             trends_file = root / "trends.py"
             if not trends_file.exists():
-                self.log("[red]trends.py not found.[/red]")
+                self.write_output("[red]trends.py not found.[/red]")
                 return
-            self.log("[bold]Running trend scan...[/bold]")
+            self.write_output("[bold]Running trend scan...[/bold]")
             result = subprocess.run([sys.executable, str(trends_file)], cwd=root, capture_output=True, text=True)
             if result.stdout.strip():
-                self.log(result.stdout.strip())
+                self.write_output(result.stdout.strip())
             if result.stderr.strip():
-                self.log(f"[red]{result.stderr.strip()}[/red]")
+                self.write_output(f"[red]{result.stderr.strip()}[/red]")
 
         def show_trends(self) -> None:
             analysis = load_trend_analysis()
-            self.log("[bold]Trend Intelligence[/bold]\n" + (analysis or "No trend intelligence available."))
+            self.write_output("[bold]Trend Intelligence[/bold]\n" + (analysis or "No trend intelligence available."))
 
         def run_safety(self) -> None:
-            self.log("[bold]Running safety check...[/bold]")
+            self.write_output("[bold]Running safety check...[/bold]")
             root = Path(__file__).resolve().parent
             files = sorted(root.joinpath(CONTENT_DIR).rglob("script.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
             if not files:
-                self.log("No scripts found.")
+                self.write_output("No scripts found.")
                 return
             for path in files[:20]:
                 text = path.read_text(encoding="utf-8")
                 flags = safety_scan(text) + quality_scan(text)
-                self.log(f"{path.parent.name}: " + ("FLAGS: " + ", ".join(flags) if flags else "PASS"))
+                self.write_output(f"{path.parent.name}: " + ("FLAGS: " + ", ".join(flags) if flags else "PASS"))
 
         def open_content(self) -> None:
             root = Path(__file__).resolve().parent
             content_dir = root / CONTENT_DIR
             content_dir.mkdir(parents=True, exist_ok=True)
             os.startfile(str(content_dir))
-            self.log(f"Opened: {content_dir}")
+            self.write_output(f"Opened: {content_dir}")
 
     MoneyBotApp().run()
 
