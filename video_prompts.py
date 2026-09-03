@@ -31,6 +31,18 @@ THEMES = [
     "cursed maxxing / mode-posting concept",
 ]
 
+# Only these recurring visual archetypes may be used as characters.
+CHARACTER_ARCHETYPES = [
+    "Chudjak / Chud Wojak",
+    "Doomer Wojak",
+    "NPC Wojak",
+    "Soyjak / Soy Wojak",
+    "Bloomer Wojak",
+    "classic generic Wojak",
+    "stereotypical wizard character",
+    "Wojak-style normie",
+]
+
 
 def ollama(prompt: str) -> str:
     response = requests.post(
@@ -87,7 +99,7 @@ def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
 
     dialogue_lines = re.findall(r"DIALOGUE/VO:\s*(.+)", output, re.IGNORECASE)
     spoken = [line for line in dialogue_lines if line.strip().upper() not in {"NONE", "(NONE)", "SILENCE", "*SILENCE*"}]
-    if len(spoken) > 2:
+    if len(spoken) > 1:
         reasons.append("too much dialogue")
 
     reaction_phrases = [
@@ -99,12 +111,8 @@ def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
         reasons.append("reaction-only ending language")
 
     caption = extract_section(output, "CAPTION TEXT")
-    explanatory_caption = [
-        "where", "because", "when", "this is", "this means", "new gaming pc",
-        "new gaming rig", "explained", "literally", "in conclusion",
-    ]
-    if len(caption) > 90 or any(word in caption.lower() for word in explanatory_caption):
-        reasons.append("explanatory caption")
+    if len(caption) > 60 or len(caption.split()) > 8:
+        reasons.append("caption is too explanatory")
 
     screen_text = [
         "screen displays", "screen reads", "monitor displays", "monitor reads",
@@ -115,16 +123,22 @@ def quality_check(output: str, source_script: str) -> tuple[bool, list[str]]:
 
     source_terms = {term.lower() for term in re.findall(r"\b[a-zA-Z][a-zA-Z0-9_-]{3,}\b", source_script)}
     concept = extract_section(output, "CONCEPT").lower()
-    common_terms = {term for term in source_terms if term in concept}
     source_markers = {"ebay", "thinkpad", "lenovo", "listing", "parts", "resell", "sold", "auction"}
-    if common_terms & source_markers:
+    if source_terms & source_markers & set(re.findall(r"\b[a-zA-Z][a-zA-Z0-9_-]{3,}\b", concept)):
         reasons.append("reused old source premise markers")
 
-    if "character simply" in output.lower():
-        reasons.append("generic reaction language")
+    forbidden_character_phrases = [
+        "name:", "age:", "personality:", "protagonist is", "main character is",
+        "toasty", "gamer character", "unemployed bedroom dweller", "overconfident crypto bro",
+        "terminally-online gamer",
+    ]
+    character_block = extract_section(output, "CHARACTER BIBLE").lower()
+    if any(phrase in character_block for phrase in forbidden_character_phrases):
+        reasons.append("invented custom character instead of Wojak archetype")
 
-    if re.search(r"FINAL.*(?:looks|stares|reacts|sad|angry|embarrassed)", output, re.IGNORECASE | re.DOTALL):
-        reasons.append("final beat may be reaction-only")
+    allowed_character_terms = ["wojak", "chudjak", "chud wojak", "doomer wojak", "npc wojak", "soyjak", "bloomer wojak", "wizard"]
+    if character_block and not any(term in character_block for term in allowed_character_terms):
+        reasons.append("character bible does not use an allowed archetype")
 
     return not reasons, reasons
 
@@ -142,6 +156,7 @@ def build_prompt(folder: Path, rejection_feedback: str = "") -> str:
         return ""
 
     selected_theme = random.choice(THEMES)
+    selected_character = random.choice(CHARACTER_ARCHETYPES)
     source_hook = read("hook.txt")
     source_premise = read("premise.txt")
     source_script = read("script.txt")
@@ -166,7 +181,23 @@ RANDOM CREATIVE MODE
 The program randomly selected this flavor for THIS video:
 {selected_theme}
 
-This selected theme is the PRIMARY creative instruction. Build the new joke around it.
+RANDOM CHARACTER
+The program selected this character archetype for THIS video:
+{selected_character}
+
+CHARACTER LOCK — ABSOLUTE
+ALL HUMAN-LIKE CHARACTERS MUST BE WOJAK-STYLE INTERNET MEME CHARACTERS.
+
+You MUST use the selected Wojak archetype above as the protagonist unless a second character is genuinely needed. A second character must also be one of the allowed Wojak archetypes or the stereotypical wizard.
+
+DO NOT INVENT A NAMED ORIGINAL CHARACTER.
+DO NOT GIVE THE CHARACTER A NAME, AGE, backstory, occupation-based custom identity, or personality profile.
+DO NOT CREATE GENERIC ANIME PEOPLE, REALISTIC PEOPLE, CUSTOM CARTOON PEOPLE, OR NEW ORIGINAL HUMAN CHARACTERS.
+
+The CHARACTER BIBLE should simply identify the archetype and a few visual traits, for example: "Chudjak / Chud Wojak, exaggerated muscular meme proportions, smug expression, simple meme-style clothing."
+
+WIZARD EXCEPTION
+A stereotypical wizard may be used when the random theme is wizardposting/wizardmaxxing or when a wizard is genuinely necessary for the joke. The wizard should be a simple stereotypical meme wizard: robe, pointed hat, staff, exaggerated beard. Do not invent a named fantasy character.
 
 SOURCE DRAFT — BACKGROUND REFERENCE ONLY
 SOURCE HOOK:
@@ -199,13 +230,14 @@ If the source and your new concept have the same central premise, THROW YOUR CON
 
 CREATIVE PRIORITY
 1. RANDOMLY SELECTED THEME
-2. ORIGINAL VISUAL GAG
-3. IMMEDIATE PREMISE
-4. CONCRETE VISUAL PUNCHLINE
-5. MEME TIMING
-6. STYLIZED ANIMATION
-7. CONTINUITY
-8. SOURCE REFERENCE — LAST PRIORITY
+2. LOCKED WOJAK CHARACTER
+3. ORIGINAL VISUAL GAG
+4. IMMEDIATE PREMISE
+5. CONCRETE VISUAL PUNCHLINE
+6. MEME TIMING
+7. STYLIZED ANIMATION
+8. CONTINUITY
+9. SOURCE REFERENCE — LAST PRIORITY
 
 THIS IS A MEME, NOT A STORY
 Create a 6-12 second visual shitpost. It should feel like a bizarre internet image suddenly came to life.
@@ -252,12 +284,11 @@ CAPTION TEXT should usually be 0-6 words. It is an optional meme label, not an e
 STYLE
 Broad internet shitpost energy: NEET, Chud, Doomer, wizardposting, gaming, broke-life, terminally-online behavior, cursed maxxing, occasional crypto/memecoin jokes.
 
-Use these as loose archetypes, not exact characters. Do not copy any particular account, artist, meme image, joke, punchline, or distinctive phrase.
-
 VISUAL LANGUAGE
+- Wojak-style characters only
+- simple meme animation
 - stylized 2D, 2.5D, simple 3D, or low-poly
-- exaggerated faces
-- readable silhouettes
+- exaggerated faces and silhouettes
 - cheap/simple environments
 - awkward or stiff movement
 - sudden physical escalation
@@ -284,26 +315,29 @@ CORE RULES
 7. If dialogue is used, maximum ONE short line total.
 8. Final shot contains the actual reveal/consequence, NOT merely a reaction.
 9. Never explain the joke.
-10. Keep props and characters consistent.
-11. If a desktop PC appears, it remains the same desktop PC.
-12. Never randomly switch devices, clothing, rooms, or object positions.
-13. Captions are added during editing.
-14. Crypto is comedy only, never financial advice or token promotion.
+10. Only Wojak-style characters and the stereotypical wizard are permitted.
+11. Never invent named characters.
+12. Keep props and characters consistent.
+13. If a desktop PC appears, it remains the same desktop PC.
+14. Never randomly switch devices, clothing, rooms, or object positions.
+15. Captions are added during editing.
+16. Crypto is comedy only, never financial advice or token promotion.
 
 CHARACTER ARCHETYPES
-Use original interpretations of:
-- Chud-style internet guy
-- Doomer-style internet guy
-- Gigachad-style character
-- unemployed bedroom dweller
-- terminally-online gamer
-- overconfident crypto bro
-- wizard/wizardposter
-- generic normie/wagie
-- absurd internet creature
+The ONLY permitted character types are:
+- Chudjak / Chud Wojak
+- Doomer Wojak
+- NPC Wojak
+- Soyjak / Soy Wojak
+- Bloomer Wojak
+- classic generic Wojak
+- Wojak-style normie
+- stereotypical wizard
+
+Do not use any other human character type. Do not name characters.
 
 CONTINUITY LOCK
-Silently establish exact appearance, clothing, location, lighting, important props, device, object positions, and animation style. Keep them consistent across every shot.
+Silently establish exact archetype, visual traits, clothing, location, lighting, important props, device, object positions, and animation style. Keep them consistent across every shot.
 
 OUTPUT FORMAT — FOLLOW EXACTLY
 Return ONLY these sections:
@@ -312,7 +346,7 @@ CONCEPT:
 One sentence describing the NEW gag. It must not describe the source draft.
 
 CHARACTER BIBLE:
-Very concise.
+Name ONLY the permitted archetype. Do not invent a name, age, backstory, or custom personality.
 
 CONTINUITY LOCK:
 Very concise.
@@ -333,10 +367,10 @@ SOUND: ...
 Add SHOT 3 and SHOT 4 only when necessary.
 
 MASTER VIDEO PROMPT:
-One compact prompt matching the SHOTS exactly. State stylized, non-photorealistic 9:16 meme animation. Do not invent additional shots or actions.
+One compact prompt matching the SHOTS exactly. State stylized, non-photorealistic 9:16 Wojak meme animation. Do not invent additional shots or actions.
 
 NEGATIVE PROMPT:
-photorealism, realistic humans, Hollywood realism, commercial polish, long cinematic pacing, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, teleporting objects, unreadable AI-generated text, malformed hands, extra limbs, watermarks, logos, random cinematic effects, unnecessary camera movement
+photorealism, realistic humans, Hollywood realism, commercial polish, long cinematic pacing, changing faces, changing clothes, extra characters, duplicate characters, disappearing props, device changes, room changes, teleporting objects, unreadable AI-generated text, malformed hands, extra limbs, watermarks, logos, random cinematic effects, unnecessary camera movement, anime characters, realistic people, custom original human characters
 
 CAPTION TEXT:
 Only a very short optional meme caption, preferably 0-6 words. Never explain the joke.
@@ -349,10 +383,11 @@ Hard cuts, exact pacing, caption timing, sound effects, and punchline timing.
 
 FINAL VALIDATION
 Silently reject and regenerate before answering if ANY apply:
+- Any human character is not a permitted Wojak archetype or stereotypical wizard.
+- A character has a custom name, age, backstory, or invented identity.
 - The new idea is recognizably the old script with details changed.
 - The source's central premise is still driving the joke.
 - The source's dialogue was reused or paraphrased.
-- The source's main object is retained without an independent comedic reason.
 - The result is longer than 12 seconds.
 - More than 4 shots are needed.
 - There is more than one central joke.
@@ -361,7 +396,6 @@ Silently reject and regenerate before answering if ANY apply:
 - The final beat does not contain a concrete physical reveal, reversal, failure, or absurd consequence.
 - The punchline depends on generated screen text.
 - The caption explains the joke instead of enhancing it.
-- It needs explanatory narration to be funny.
 - It resembles an advertisement, short film, tutorial, explainer, or conventional skit.
 - It is photorealistic.
 
