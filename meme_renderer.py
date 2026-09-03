@@ -68,6 +68,24 @@ def resolve_asset(value: str, category: str) -> Path:
     raise FileNotFoundError(f"Asset not found: {value} (looked in assets/{category}/)")
 
 
+def escape_drawtext(text: str) -> str:
+    return text.replace("\\", r"\\").replace(":", r"\:").replace("'", r"\\'")
+
+
+def overlay_position(position: str, width_expr: str = "overlay_w", height_expr: str = "overlay_h") -> tuple[str, str]:
+    """Return FFmpeg overlay coordinates for a simple named position."""
+    positions = {
+        "center": (f"(W-{width_expr})/2", f"(H-{height_expr})/2"),
+        "bottom": (f"(W-{width_expr})/2", f"H-{height_expr}-80"),
+        "bottom_center": (f"(W-{width_expr})/2", f"H-{height_expr}-80"),
+        "top": (f"(W-{width_expr})/2", "80"),
+        "top_center": (f"(W-{width_expr})/2", "80"),
+        "left": ("60", f"(H-{height_expr})/2"),
+        "right": (f"W-{width_expr}-60", f"(H-{height_expr})/2"),
+    }
+    return positions.get(position, positions["bottom_center"])
+
+
 def render_image_shot(
     image: Path,
     duration: float,
@@ -75,33 +93,61 @@ def render_image_shot(
     caption: str | None = None,
     zoom: float = 1.0,
     position: str = "center",
+    character: Path | None = None,
+    character_scale: float = 0.65,
+    character_position: str = "bottom_center",
 ) -> None:
-    """Render one image into a 9:16 MP4 shot with optional caption and slow zoom."""
+    """Render one 9:16 shot, optionally compositing a transparent character over it."""
     output.parent.mkdir(parents=True, exist_ok=True)
     fontfile = ffmpeg_filter_path(find_font())
-    escaped_caption = (caption or "").replace("\\", r"\\").replace(":", r"\:").replace("'", r"\\'")
+    duration_text = f"{duration:.3f}"
 
-    filters = [
+    inputs = ["-y", "-loop", "1", "-i", ffmpeg_input_path(image)]
+    if character:
+        inputs += ["-loop", "1", "-i", ffmpeg_input_path(character)]
+
+    background_filters = [
         f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase",
         f"crop={WIDTH}:{HEIGHT}",
     ]
     if zoom > 1.0:
-        filters.append(
+        background_filters.append(
             f"zoompan=z='min(zoom+{(zoom - 1.0) / max(duration * FPS, 1):.8f},{zoom:.4f})':"
             f"d=1:s={WIDTH}x{HEIGHT}:fps={FPS}"
         )
-    if caption:
-        # Captions are deliberately the only generated text layer. No dialogue or
-        # voiceover is required; supplied audio is handled separately later.
-        filters.append(
-            f"drawtext=fontfile='{fontfile}':text='{escaped_caption}':"
-            "fontcolor=white:fontsize=64:borderw=5:bordercolor=black:"
-            "x=(w-text_w)/2:y=h*0.78"
+
+    if character:
+        if not 0.1 <= character_scale <= 1.5:
+            raise ValueError("character_scale must be between 0.1 and 1.5.")
+        char_width = max(1, round(WIDTH * character_scale))
+        char_height = max(1, round(HEIGHT * character_scale))
+        char_x, char_y = overlay_position(character_position, "overlay_w", "overlay_h")
+        filters = (
+            f"[0:v]{','.join(background_filters)},format=rgba[bg];"
+            f"[1:v]scale=w={char_width}:h={char_height}:force_original_aspect_ratio=decrease,"
+            f"format=rgba[char];"
+            f"[bg][char]overlay=x={char_x}:y={char_y}:shortest=1:format=auto[composed]"
         )
+        video_map = "[composed]"
+    else:
+        filters = f"[0:v]{','.join(background_filters)}[composed]"
+        video_map = "[composed]"
+
+    if caption:
+        escaped_caption = escape_drawtext(caption)
+        filters += (
+            f";{video_map}drawtext=fontfile='{fontfile}':text='{escaped_caption}':"
+            "fontcolor=white:fontsize=64:borderw=5:bordercolor=black:"
+            "x=(w-text_w)/2:y=h*0.78[captioned]"
+        )
+        video_map = "[captioned]"
 
     run_ffmpeg([
-        "-y", "-loop", "1", "-i", ffmpeg_input_path(image),
-        "-t", str(duration), "-vf", ",".join(filters), "-an",
+        *inputs,
+        "-filter_complex", filters,
+        "-map", video_map,
+        "-t", duration_text,
+        "-an",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         str(output),
     ])
@@ -144,20 +190,52 @@ def render_from_scene(scene_path: Path, output: Path) -> None:
             duration = shot.get("duration")
             if not isinstance(duration, (int, float)) or duration <= 0:
                 raise ValueError(f"Shot {index} needs a positive numeric duration.")
-            image_value = shot.get("image") or shot.get("background")
-            if not isinstance(image_value, str) or not image_value.strip():
-                raise ValueError(f"Shot {index} needs an 'image' or 'background' asset path.")
-            category = "backgrounds" if shot.get("background") else "characters"
-            image = resolve_asset(image_value, category)
+
+            background_value = shot.get("background")
+            image_value = shot.get("image")
+            if background_value is not None:
+                if not isinstance(background_value, str) or not background_value.strip():
+                    raise ValueError(f"Shot {index} background must be a non-empty string.")
+                background = resolve_asset(background_value, "backgrounds")
+            elif isinstance(image_value, str) and image_value.strip():
+                background = resolve_asset(image_value, "characters")
+            else:
+                raise ValueError(f"Shot {index} needs a 'background' or legacy 'image' asset path.")
+
+            character_value = shot.get("character")
+            character = None
+            if character_value is not None:
+                if not isinstance(character_value, str) or not character_value.strip():
+                    raise ValueError(f"Shot {index} character must be a non-empty string or null.")
+                character = resolve_asset(character_value, "characters")
+
             caption = shot.get("caption")
             if caption is not None and not isinstance(caption, str):
                 raise ValueError(f"Shot {index} caption must be a string or null.")
+
             zoom = shot.get("zoom", 1.0)
             if not isinstance(zoom, (int, float)) or zoom < 1.0 or zoom > 1.25:
                 raise ValueError(f"Shot {index} zoom must be between 1.0 and 1.25.")
 
+            character_scale = shot.get("character_scale", 0.65)
+            if not isinstance(character_scale, (int, float)):
+                raise ValueError(f"Shot {index} character_scale must be numeric.")
+
+            character_position = shot.get("character_position", "bottom_center")
+            if not isinstance(character_position, str):
+                raise ValueError(f"Shot {index} character_position must be a string.")
+
             shot_output = work_dir / f"shot_{index:03d}.mp4"
-            render_image_shot(image, float(duration), shot_output, caption, float(zoom))
+            render_image_shot(
+                background,
+                float(duration),
+                shot_output,
+                caption,
+                float(zoom),
+                character=character,
+                character_scale=float(character_scale),
+                character_position=character_position,
+            )
             rendered.append(shot_output)
 
         concat_shots(rendered, output)
