@@ -42,17 +42,32 @@ def ollama(prompt: str) -> str:
 
 def latest_drafts(limit: int = 3) -> list[Path]:
     scripts = sorted(
-        CONTENT_DIR.rglob("script.txt"),
+        list(CONTENT_DIR.rglob("script.txt")) + list(CONTENT_DIR.rglob("*_script.txt")),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
-    return [p.parent for p in scripts[:limit]]
+    folders: list[Path] = []
+    seen: set[Path] = set()
+    for script in scripts:
+        if script.parent not in seen:
+            folders.append(script.parent)
+            seen.add(script.parent)
+        if len(folders) >= limit:
+            break
+    return folders
 
 
 def build_prompt(folder: Path) -> str:
     def read(name: str) -> str:
-        path = folder / name
-        return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        candidates = [folder / name, folder / f"{folder.name}_{name}"]
+        for path in candidates:
+            if path.exists():
+                return path.read_text(encoding="utf-8").strip()
+        matches = sorted(folder.glob(f"*_{name}")) + sorted(folder.glob(f"*_{name}.txt"))
+        for path in matches:
+            if path.is_file():
+                return path.read_text(encoding="utf-8").strip()
+        return ""
 
     selected_theme = random.choice(THEMES)
 
@@ -259,8 +274,9 @@ Do NOT include affiliate links, monetization instructions, financial advice, or 
 
 def generate_for(folder: Path) -> None:
     output = ollama(build_prompt(folder))
-    (folder / "master_video_prompt.txt").write_text(output, encoding="utf-8")
-    print(f"Created AI video package: {folder / 'master_video_prompt.txt'}")
+    output_path = folder / f"{folder.name}_video_prompt.txt"
+    output_path.write_text(output, encoding="utf-8")
+    print(f"Created AI video package: {output_path}")
 
 
 def main() -> None:
