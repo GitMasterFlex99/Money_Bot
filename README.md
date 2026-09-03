@@ -28,9 +28,9 @@ Niche config ───┘                                      │
 
 ### Video ideation
 
-`video_prompts.py` turns recent drafts into short, video-native meme concepts. The current direction favors simple visual gags, Wojak-style meme characters, fast cuts, physical punchlines, and 9:16 output for use with an external AI video service.
+`video_prompts.py` turns recent drafts into short, video-native meme concepts. The current direction favors simple visual gags, Wojak-style meme characters, fast cuts, physical punchlines, and 9:16 output.
 
-The repository does **not** automatically generate or upload videos.
+**Video generation requires either a subscription/free allowance from an external AI video service or a suitable local video-generation model.** Money Bot generates the prompts; it does **not** include a hosted video-generation service or automatically generate/upload videos itself. This keeps the core project usable without requiring a paid video API.
 
 ## Safety by design
 
@@ -54,6 +54,7 @@ The safety layer flags common high-risk patterns, while final publication decisi
 - [Ollama](https://ollama.com/)
 - A local Ollama model, such as `llama3.2`
 - Git
+- For AI video generation: either an external video-generation service with available credits/subscription, or a compatible local video model
 
 Python dependencies are listed in `requirements.txt`.
 
