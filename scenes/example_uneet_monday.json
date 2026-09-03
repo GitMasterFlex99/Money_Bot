@@ -1,31 +1,34 @@
 {
   "title": "Unemployed Monday",
   "style": "WOJAK_SHITPOST",
-  "description": "First real renderer test using the local Bedroom.png background with Doomer as a transparent character overlay.",
+  "description": "Dynamic renderer test using the local Bedroom.png background and Doomer as a transparent character overlay. Captions are intentionally omitted so they can be added during editing.",
   "shots": [
     {
       "duration": 2.5,
       "background": "Bedroom.png",
       "character": "doomer.png",
       "character_scale": 0.62,
-      "character_position": "bottom_center",
-      "caption": "me opening the job board"
+      "character_position": "bottom_right",
+      "motion": "push_in",
+      "character_motion": "float"
     },
     {
-      "duration": 2.8,
+      "duration": 2.2,
       "background": "Bedroom.png",
       "character": "doomer.png",
-      "character_scale": 0.62,
-      "character_position": "bottom_center",
-      "caption": "one application later"
+      "character_scale": 0.68,
+      "character_position": "bottom_left",
+      "motion": "pan_right",
+      "character_motion": "sway"
     },
     {
-      "duration": 2.5,
+      "duration": 1.8,
       "background": "Bedroom.png",
       "character": "doomer.png",
-      "character_scale": 0.62,
+      "character_scale": 0.72,
       "character_position": "bottom_center",
-      "caption": "career development"
+      "motion": "shake",
+      "character_motion": "shake"
     }
   ]
 }
